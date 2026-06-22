@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vendor Audio"
+  short_description: "Refresh audio libraries"
+  default_prompt: "Use $vendor-audio to vendor or refresh miniaudio and stb_vorbis."

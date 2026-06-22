@@ -1,0 +1,32 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct main0_in
+{
+    float2 in_var_TEXCOORD0 [[user(locn0)]];
+};
+
+static inline float logLuminanceAt(texture2d<float> hdr_color, sampler hdr_sampler, float2 uv)
+{
+    float3 color = max(hdr_color.sample(hdr_sampler, uv).rgb, float3(0.0));
+    float luma = dot(color, float3(0.2126, 0.7152, 0.0722));
+    return log2(max(luma, 0.0001));
+}
+
+fragment float main0(main0_in in [[stage_in]],
+                     texture2d<float> hdr_color [[texture(0)]],
+                     sampler hdr_sampler [[sampler(0)]])
+{
+    float sum = 0.0;
+    for (uint y = 0u; y < 16u; y++)
+    {
+        for (uint x = 0u; x < 16u; x++)
+        {
+            float2 uv = float2((float(x) + 0.5) / 16.0, (float(y) + 0.5) / 16.0);
+            sum += logLuminanceAt(hdr_color, hdr_sampler, uv);
+        }
+    }
+    return sum / 256.0;
+}

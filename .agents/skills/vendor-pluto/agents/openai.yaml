@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vendor Pluto"
+  short_description: "Refresh plutosvg/plutovg"
+  default_prompt: "Use $vendor-pluto to vendor or refresh Pluto SVG/VG source."

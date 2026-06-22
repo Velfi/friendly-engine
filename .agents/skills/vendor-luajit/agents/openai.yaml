@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vendor LuaJIT"
+  short_description: "Fetch and verify LuaJIT source"
+  default_prompt: "Use $vendor-luajit to vendor or refresh the official LuaJIT source."

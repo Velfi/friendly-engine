@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vendor SDL3"
+  short_description: "Fetch and verify SDL3 source"
+  default_prompt: "Use $vendor-sdl3 to vendor or refresh the SDL3 Zig package."

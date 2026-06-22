@@ -1,0 +1,4 @@
+interface:
+  display_name: "Iconoir"
+  short_description: "Download and vendor Iconoir SVGs"
+  default_prompt: "Use $iconoir to download and wire Iconoir icons for this project."

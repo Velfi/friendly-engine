@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vendor zphysics"
+  short_description: "Refresh zphysics/Jolt source"
+  default_prompt: "Use $vendor-zphysics to vendor or refresh the zphysics physics package."

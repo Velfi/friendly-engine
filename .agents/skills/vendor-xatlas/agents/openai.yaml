@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vendor xatlas"
+  short_description: "Refresh xatlas UV source"
+  default_prompt: "Use $vendor-xatlas to vendor or refresh the xatlas UV unwrapping source."

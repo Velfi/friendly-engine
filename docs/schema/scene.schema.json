@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Friendly Engine Scene",
+  "type": "object",
+  "properties": {
+    "schema_version": { "type": "integer", "minimum": 1 },
+    "next_object_id": { "type": "integer", "minimum": 1 },
+    "objects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "primitive": { "type": "string", "enum": ["box", "plane", "cylinder", "sphere"] },
+          "position": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+          "scale": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+          "base_color": { "type": "array", "items": { "type": "integer" }, "minItems": 4, "maxItems": 4 },
+          "texture_file": { "type": "string" },
+          "mesh": {
+            "type": "object",
+            "properties": {
+              "vertices": { "type": "array" },
+              "indices": { "type": "array", "items": { "type": "integer" } }
+            },
+            "required": ["vertices", "indices"]
+          }
+        },
+        "required": ["id", "name", "position", "scale", "base_color", "texture_file", "mesh"]
+      }
+    }
+  },
+  "required": ["objects"],
+  "additionalProperties": true
+}

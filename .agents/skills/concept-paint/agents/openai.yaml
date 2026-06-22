@@ -1,0 +1,5 @@
+interface:
+  display_name: "Concept Paint"
+  short_description: "Project styled screenshots as paint."
+  default_prompt: "Use $concept-paint to capture the current viewport, create or hand off a styling request package, import the styled image, and apply it to the active mode surfaces."
+  brand_color: "#6E7BFF"

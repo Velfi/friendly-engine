@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vendor Fonts"
+  short_description: "Refresh UI font files"
+  default_prompt: "Use $vendor-fonts to vendor or refresh the UI font files."

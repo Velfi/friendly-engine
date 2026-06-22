@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Friendly Engine World Manifest",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "world_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cell_size_m": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "cells": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "coord": {
+            "type": "array",
+            "items": { "type": "integer" },
+            "minItems": 2,
+            "maxItems": 3
+          },
+          "authoring": {
+            "type": "string"
+          },
+          "interior_parent": {
+            "type": "array",
+            "items": { "type": "integer" },
+            "minItems": 2,
+            "maxItems": 3
+          }
+        },
+        "required": ["coord", "authoring"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schema_version", "cell_size_m", "cells"],
+  "additionalProperties": false
+}
