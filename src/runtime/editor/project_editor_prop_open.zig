@@ -1,10 +1,7 @@
 const std = @import("std");
 const shared = @import("runtime_shared");
-const geometry = shared.geometry;
-const editor_math = shared.editor_math;
 const project_editor_state = @import("project_editor_state.zig");
 const project_editor_prop_catalog = @import("project_editor_prop_catalog.zig");
-const project_editor_prop_instantiate = @import("project_editor_prop_instantiate.zig");
 const project_editor_prop_recent = @import("project_editor_prop_recent.zig");
 const project_editor_prop_asset = @import("project_editor_prop_asset.zig");
 
@@ -47,12 +44,9 @@ fn openCatalogAssetForEditing(
         return;
     }
 
-    const point = editor_math.Vec3{
-        .x = 0,
-        .y = groundOffsetForEntry(entry),
-        .z = 0,
-    };
-    try project_editor_prop_instantiate.instantiatePropAssetAt(state, entry.id, point);
+    var doc = try project_editor_prop_asset.ensureAssetDocument(state, entry.id);
+    doc.deinit(state.allocator);
+    try project_editor_prop_asset.modifyAssetWorkingCopy(state, entry.id);
     state.prop_workspace_mode = .display;
     state.prop_tool = .select;
     if (state.selected_object) |idx| {
@@ -154,8 +148,4 @@ fn frameOpenedProp(state: *ProjectEditorState, idx: usize) void {
     state.camera.pitch = 0.24;
     state.camera.distance = 1.65;
     state.show_grid = false;
-}
-
-fn groundOffsetForEntry(entry: project_editor_prop_catalog.CatalogEntry) f32 {
-    return geometry.groundOffsetY(entry.kind, entry.params, 1.0);
 }

@@ -41,8 +41,7 @@
             .hash = "zigimg-0.1.0-8_eo2sywFwArMrr5UlqjhhAMbRtpmC4mL5KbBmjrxFba",
         },
         .kdl = .{
-            .url = "git+https://codeberg.org/desttinghim/zig-kdl?ref=main#22fa7655d70de1f447c864921ab847effec355f3",
-            .hash = "kdl-0.0.0-8rilELAEAgCwhdgb36ZsWmGgtvrKaLmLI7eMlwBz8UDt",
+            .path = "third_party/kdl",
         },
         .sdl = .{
             .path = "third_party/sdl3",

@@ -39,6 +39,7 @@ pub const SDL_GPUStoreOp = types.SDL_GPUStoreOp;
 pub const SDL_GPU_STOREOP_STORE = types.SDL_GPU_STOREOP_STORE;
 pub const SDL_GPU_STOREOP_DONT_CARE = types.SDL_GPU_STOREOP_DONT_CARE;
 pub const SDL_GPU_STOREOP_RESOLVE = types.SDL_GPU_STOREOP_RESOLVE;
+pub const SDL_GPU_STOREOP_RESOLVE_AND_STORE = types.SDL_GPU_STOREOP_RESOLVE_AND_STORE;
 pub const SDL_GPUIndexElementSize = types.SDL_GPUIndexElementSize;
 pub const SDL_GPU_INDEXELEMENTSIZE_32BIT = types.SDL_GPU_INDEXELEMENTSIZE_32BIT;
 pub const SDL_GPUVertexInputRate = types.SDL_GPUVertexInputRate;

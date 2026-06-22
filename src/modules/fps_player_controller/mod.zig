@@ -47,6 +47,7 @@ pub const Config = struct {
     gravity_mps2: f32 = -16.0,
     stand_eye_height_m: f32 = 1.62,
     crouch_eye_height_m: f32 = 1.05,
+    terrain_spawn_clearance_m: f32 = 0.16,
     look_sensitivity: f32 = 0.0025,
     invert_look_x: bool = true,
     invert_look_y: bool = true,
@@ -156,6 +157,14 @@ pub const InteractionTarget = struct {
     object_id: u64 = 0,
 };
 
+pub const TerrainHeightfield = struct {
+    position: core.math.Vec3f,
+    size: u32,
+    offset: core.math.Vec3f,
+    scale: core.math.Vec3f,
+    heights: []const f32,
+};
+
 const component_fields = [_]framework.components.FieldDesc{
     .{ .name = "walk_speed_mps", .kind = .f32 },
     .{ .name = "sprint_speed_mps", .kind = .f32 },
@@ -168,6 +177,7 @@ const component_fields = [_]framework.components.FieldDesc{
     .{ .name = "jump_velocity_mps", .kind = .f32 },
     .{ .name = "stand_eye_height_m", .kind = .f32 },
     .{ .name = "crouch_eye_height_m", .kind = .f32 },
+    .{ .name = "terrain_spawn_clearance_m", .kind = .f32 },
     .{ .name = "look_sensitivity", .kind = .f32 },
     .{ .name = "invert_look_x", .kind = .bool },
     .{ .name = "invert_look_y", .kind = .bool },
@@ -349,6 +359,49 @@ pub fn applyVelocityToBody(body: *physics3d.RigidBody, velocity_mps: core.math.V
     body.sleep_timer = 0.0;
 }
 
+pub fn resolveTerrainSpawnPosition(
+    authored_position: core.math.Vec3f,
+    terrain_height_m: f32,
+    config: Config,
+) !core.math.Vec3f {
+    try validateConfig(config);
+    if (!std.math.isFinite(terrain_height_m)) return error.InvalidTerrainHeight;
+    return .{
+        .x = authored_position.x,
+        .y = terrain_height_m + config.terrain_spawn_clearance_m,
+        .z = authored_position.z,
+    };
+}
+
+pub fn sampleTerrainHeightfield(surface: TerrainHeightfield, x: f32, z: f32) ?f32 {
+    if (surface.size < 2) return null;
+    if (surface.scale.x <= std.math.floatEps(f32) or surface.scale.z <= std.math.floatEps(f32)) return null;
+    const span = @as(f32, @floatFromInt(surface.size - 1));
+    const local_x = (x - surface.position.x - surface.offset.x) / surface.scale.x;
+    const local_z = (z - surface.position.z - surface.offset.z) / surface.scale.z;
+    if (local_x < 0.0 or local_z < 0.0 or local_x > span or local_z > span) return null;
+
+    const x0_float = @floor(local_x);
+    const z0_float = @floor(local_z);
+    const x0: usize = @intFromFloat(@min(x0_float, span - 1.0));
+    const z0: usize = @intFromFloat(@min(z0_float, span - 1.0));
+    const max_index: usize = @intCast(surface.size - 1);
+    const x1 = @min(x0 + 1, max_index);
+    const z1 = @min(z0 + 1, max_index);
+    const tx = local_x - @as(f32, @floatFromInt(x0));
+    const tz = local_z - @as(f32, @floatFromInt(z0));
+    const size: usize = @intCast(surface.size);
+    if (surface.heights.len < size * size) return null;
+
+    const h00 = surface.heights[z0 * size + x0];
+    const h10 = surface.heights[z0 * size + x1];
+    const h01 = surface.heights[z1 * size + x0];
+    const h11 = surface.heights[z1 * size + x1];
+    const hx0 = std.math.lerp(h00, h10, tx);
+    const hx1 = std.math.lerp(h01, h11, tx);
+    return surface.position.y + surface.offset.y + std.math.lerp(hx0, hx1, tz) * surface.scale.y;
+}
+
 pub fn sendInteractionRequest(
     world: *framework.World,
     target: InteractionTarget,
@@ -433,6 +486,7 @@ fn validateConfig(config: Config) !void {
     if (!std.math.isFinite(config.breath_seconds) or config.breath_seconds <= 0.0) return error.InvalidConfig;
     if (!std.math.isFinite(config.jump_velocity_mps) or config.jump_velocity_mps < 0.0) return error.InvalidConfig;
     if (!std.math.isFinite(config.gravity_mps2)) return error.InvalidConfig;
+    if (!std.math.isFinite(config.terrain_spawn_clearance_m) or config.terrain_spawn_clearance_m < 0.0) return error.InvalidConfig;
     if (!std.math.isFinite(config.look_sensitivity) or config.look_sensitivity < 0.0) return error.InvalidConfig;
     if (!std.math.isFinite(config.max_pitch_rad) or config.max_pitch_rad <= 0.0) return error.InvalidConfig;
     if (!std.math.isFinite(config.interact_range_m) or config.interact_range_m <= 0.0) return error.InvalidConfig;

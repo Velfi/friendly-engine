@@ -1,0 +1,6 @@
+﻿/- kdl-version 2
+// This file is UTF-8 encoded and starts with a Byte Order Mark,
+// and is followed by a kdl-version identifier
+example {
+	name "BOM with version"
+}

@@ -28,6 +28,39 @@ pub fn execute(allocator: std.mem.Allocator, command: CommandFile, editor_state:
             editor_state.status_buf[0..editor_state.status_len],
         });
     }
+    if (std.mem.eql(u8, command.name, "prop.instance-place")) {
+        const asset_id = command.asset orelse return error.MissingObject;
+        const x = command.point_x orelse return error.MissingPoint;
+        const z = command.point_z orelse return error.MissingPoint;
+        const point: shared.editor_math.Vec3 = .{ .x = x, .y = command.point_y orelse 0, .z = z };
+        editor_state.mode = .prop_creation;
+        editor_state.prop_workspace_mode = .edit;
+        editor_state.prop_tool = .asset;
+        const before_count = editor_state.objects.items.len;
+        try project_editor_prop.instantiatePropAssetAt(editor_state, asset_id, point);
+        if (editor_state.objects.items.len == before_count) return error.UnknownPropAsset;
+        const idx = editor_state.objects.items.len - 1;
+        if (command.yaw) |yaw| editor_state.objects.items[idx].rotation.y = yaw;
+        if (command.scale_world) |scale| editor_state.objects.items[idx].scale = .{ .x = scale, .y = scale, .z = scale };
+        editor_state.scene_dirty = true;
+        return std.fmt.allocPrint(allocator, "{{\"ok\":true,\"id\":\"{s}\",\"command\":\"{s}\",\"asset\":\"{s}\",\"object\":\"{s}\",\"object_id\":{d},\"position\":{{\"x\":{d:.6},\"y\":{d:.6},\"z\":{d:.6}}},\"rotation\":{{\"x\":{d:.6},\"y\":{d:.6},\"z\":{d:.6}}},\"scale\":{{\"x\":{d:.6},\"y\":{d:.6},\"z\":{d:.6}}},\"status\":\"{s}\"}}\n", .{
+            command.id,
+            command.name,
+            asset_id,
+            editor_state.objects.items[idx].name,
+            editor_state.objects.items[idx].id,
+            editor_state.objects.items[idx].position.x,
+            editor_state.objects.items[idx].position.y,
+            editor_state.objects.items[idx].position.z,
+            editor_state.objects.items[idx].rotation.x,
+            editor_state.objects.items[idx].rotation.y,
+            editor_state.objects.items[idx].rotation.z,
+            editor_state.objects.items[idx].scale.x,
+            editor_state.objects.items[idx].scale.y,
+            editor_state.objects.items[idx].scale.z,
+            editor_state.status_buf[0..editor_state.status_len],
+        });
+    }
     if (std.mem.eql(u8, command.name, "prop.new")) {
         const asset_id = command.object orelse return error.MissingObject;
         try project_editor_prop_asset.createCustomAssetWorkingCopy(editor_state, asset_id, asset_id, "");
@@ -647,9 +680,11 @@ fn parseRenderMode(value: []const u8) !project_editor_types.ShadingMode {
     if (std.mem.eql(u8, value, "wireframe")) return .wireframe;
     if (std.mem.eql(u8, value, "solid")) return .solid;
     if (std.mem.eql(u8, value, "material_preview")) return .material_preview;
+    if (std.mem.eql(u8, value, "lod_debug")) return .lod_debug;
     if (std.mem.eql(u8, value, "rendered")) return .rendered;
     if (std.mem.eql(u8, value, "wire")) return .wireframe;
     if (std.mem.eql(u8, value, "unlit")) return .material_preview;
+    if (std.mem.eql(u8, value, "lod")) return .lod_debug;
     if (std.mem.eql(u8, value, "full")) return .rendered;
     if (std.mem.eql(u8, value, "lit")) return .rendered;
     return error.InvalidPropRenderMode;
@@ -717,9 +752,11 @@ test "parseRenderMode accepts canonical values and legacy aliases" {
     try std.testing.expectEqual(project_editor_types.ShadingMode.wireframe, try parseRenderMode("wireframe"));
     try std.testing.expectEqual(project_editor_types.ShadingMode.solid, try parseRenderMode("solid"));
     try std.testing.expectEqual(project_editor_types.ShadingMode.material_preview, try parseRenderMode("material_preview"));
+    try std.testing.expectEqual(project_editor_types.ShadingMode.lod_debug, try parseRenderMode("lod_debug"));
     try std.testing.expectEqual(project_editor_types.ShadingMode.rendered, try parseRenderMode("rendered"));
     try std.testing.expectEqual(project_editor_types.ShadingMode.wireframe, try parseRenderMode("wire"));
     try std.testing.expectEqual(project_editor_types.ShadingMode.material_preview, try parseRenderMode("unlit"));
+    try std.testing.expectEqual(project_editor_types.ShadingMode.lod_debug, try parseRenderMode("lod"));
     try std.testing.expectEqual(project_editor_types.ShadingMode.rendered, try parseRenderMode("lit"));
     try std.testing.expectEqual(project_editor_types.ShadingMode.rendered, try parseRenderMode("full"));
     try std.testing.expectError(error.InvalidPropRenderMode, parseRenderMode("collision"));

@@ -28,6 +28,7 @@ pub const editor_math = @import("editor_math.zig");
 pub const geometry = @import("geometry.zig");
 pub const uv_atlas = @import("uv_atlas.zig");
 pub const scene_io = @import("scene_io.zig");
+pub const kdl_bridge = @import("kdl_bridge.zig");
 pub const scene_kdl = @import("scene_kdl.zig");
 pub const scene_binary = @import("scene_binary.zig");
 pub const scene_document = @import("scene_document.zig");

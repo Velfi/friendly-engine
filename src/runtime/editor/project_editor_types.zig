@@ -996,6 +996,7 @@ pub const ShadingMode = enum {
     wireframe,
     solid,
     material_preview,
+    lod_debug,
     rendered,
 
     pub fn label(self: ShadingMode) []const u8 {
@@ -1003,6 +1004,7 @@ pub const ShadingMode = enum {
             .wireframe => "Wireframe",
             .solid => "Solid",
             .material_preview => "Material Preview",
+            .lod_debug => "LOD Debug",
             .rendered => "Rendered",
         };
     }
@@ -1012,6 +1014,7 @@ test "shading mode labels are canonical" {
     try std.testing.expectEqualStrings("Wireframe", ShadingMode.wireframe.label());
     try std.testing.expectEqualStrings("Solid", ShadingMode.solid.label());
     try std.testing.expectEqualStrings("Material Preview", ShadingMode.material_preview.label());
+    try std.testing.expectEqualStrings("LOD Debug", ShadingMode.lod_debug.label());
     try std.testing.expectEqualStrings("Rendered", ShadingMode.rendered.label());
 }
 

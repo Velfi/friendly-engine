@@ -67,7 +67,7 @@ fn beginColorOnlyPass(self: anytype) !void {
             self.swapchain_texture,
         .resolve_texture = if (self.scene_color_hdr_active and uses_msaa) self.hdr_color_texture else null,
         .load_op = sdl_gpu.SDL_GPU_LOADOP_LOAD,
-        .store_op = if (self.scene_color_hdr_active and uses_msaa) sdl_gpu.SDL_GPU_STOREOP_RESOLVE else sdl_gpu.SDL_GPU_STOREOP_STORE,
+        .store_op = if (self.scene_color_hdr_active and uses_msaa) sdl_gpu.SDL_GPU_STOREOP_RESOLVE_AND_STORE else sdl_gpu.SDL_GPU_STOREOP_STORE,
     };
     if (color_target.texture == null) return error.ColorTargetMissing;
 

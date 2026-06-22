@@ -1,0 +1,6 @@
+parent {
+    child1
+    child2
+}
+
+parent { child1; child2; }

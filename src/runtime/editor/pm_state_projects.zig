@@ -5,6 +5,7 @@ const pm_types = @import("pm_types.zig");
 const pm_util = @import("pm_util.zig");
 const pm_state = @import("pm_state.zig");
 const pm_state_config = @import("pm_state_config.zig");
+const project_settings = @import("project_editor_project_settings.zig");
 const scene_io = @import("runtime_shared").scene_io;
 
 const starter_agents_md =
@@ -260,6 +261,7 @@ fn ensureStarterFiles(state: *pm_state.ProjectManagerState, absolute_path: []con
         else => return err,
     };
     try scene_io.ensureSampleScene(state.allocator, state.io, absolute_path, "scenes/main.kdl");
+    try ensureProjectSettings(state, absolute_path, false);
     try ensureSampleWorld(state, absolute_path);
     try ensureStarterAgents(state, absolute_path);
 }
@@ -357,8 +359,21 @@ fn resetProjectFiles(state: *pm_state.ProjectManagerState, project_path: []const
     });
 
     try scene_io.ensureSampleScene(state.allocator, state.io, project_path, "scenes/main.kdl");
+    try ensureProjectSettings(state, project_path, true);
     try ensureSampleWorld(state, project_path);
     try ensureStarterAgents(state, project_path);
+}
+
+fn ensureProjectSettings(state: *pm_state.ProjectManagerState, project_path: []const u8, overwrite: bool) !void {
+    if (!overwrite) {
+        try project_settings.ensureDefaultInProject(state.allocator, state.io, project_path);
+        return;
+    }
+    const bytes = try project_settings.formatBytes(state.allocator, project_settings.defaultSettings());
+    defer state.allocator.free(bytes);
+    const settings_path = try std.fs.path.join(state.allocator, &.{ project_path, project_settings.settings_file_name });
+    defer state.allocator.free(settings_path);
+    try std.Io.Dir.cwd().writeFile(state.io, .{ .sub_path = settings_path, .data = bytes });
 }
 
 fn ensureStarterAgents(state: *pm_state.ProjectManagerState, project_path: []const u8) !void {

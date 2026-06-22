@@ -26,40 +26,33 @@ const PropPrimitive = project_editor_types.PropPrimitive;
 const primitive_color = shared.color.Color{ .r = 170, .g = 180, .b = 195, .a = 255 };
 
 pub fn instantiatePropAssetAt(state: *ProjectEditorState, catalog_id: []const u8, point: editor_math.Vec3) !void {
-    const entry = findCatalogEntry(catalog_id) orelse {
-        project_editor_state.setStatus(state, "Unknown prop asset");
-        return;
-    };
     project_editor_edit.pushUndoSnapshot(state);
 
-    var doc = try project_editor_prop_asset.ensureAssetDocument(state, entry.id);
+    var doc = try project_editor_prop_asset.ensureAssetDocument(state, catalog_id);
     defer doc.deinit(state.allocator);
     var mesh = try project_editor_prop_asset.loadAssetMesh(state, doc);
     errdefer mesh.deinit(state.allocator);
+    const catalog_entry = findCatalogEntry(doc.id);
+    const mesh_ref = if (catalog_entry) |entry| entry.mesh_ref else doc.mesh_path;
 
-    var project_dir = try scene_resolve.openProjectDir(state.io, state.project_path);
-    defer project_dir.close(state.io);
-    const resolver = scene_resolve.AssetResolver{
-        .io = state.io,
-        .project_dir = project_dir,
-        .cache_target = project_editor_prop_catalog.cache_target,
-    };
-    const tex = try resolver.readTexture(state.allocator, "assets/source/textures/default.png");
+    const tex = try state.allocator.alloc(u8, TextureSize * TextureSize * 4);
     errdefer state.allocator.free(tex);
 
     var skeleton_asset: ?[]u8 = null;
     var bone_pose: []shared.scene_animation.Transform = &.{};
     if (mesh.skin != null) {
-        const glb_bytes = try project_dir.readFileAlloc(state.io, entry.mesh_ref, state.allocator, .limited(64 * 1024 * 1024));
+        var project_dir = try scene_resolve.openProjectDir(state.io, state.project_path);
+        defer project_dir.close(state.io);
+        const glb_bytes = try project_dir.readFileAlloc(state.io, mesh_ref, state.allocator, .limited(64 * 1024 * 1024));
         defer state.allocator.free(glb_bytes);
-        const skeletons = try shared.gltf_import.extractSkeletons(state.allocator, glb_bytes, entry.mesh_ref);
+        const skeletons = try shared.gltf_import.extractSkeletons(state.allocator, glb_bytes, mesh_ref);
         defer {
             for (skeletons) |*skeleton| skeleton.deinit(state.allocator);
             state.allocator.free(skeletons);
         }
         if (skeletons.len == 0) return error.MissingSkeleton;
         try ensureSkeletonInScene(state, skeletons[0]);
-        skeleton_asset = try state.allocator.dupe(u8, entry.mesh_ref);
+        skeleton_asset = try state.allocator.dupe(u8, mesh_ref);
         bone_pose = try shared.scene_skinning.restPoseFromSkeleton(state.allocator, skeletons[0]);
     }
 
@@ -78,14 +71,14 @@ pub fn instantiatePropAssetAt(state: *ProjectEditorState, catalog_id: []const u8
         .primitive_kind = null,
         .object_kind = .mesh,
         .physics = null,
-        .prop_asset_id = try state.allocator.dupe(u8, entry.id),
+        .prop_asset_id = try state.allocator.dupe(u8, doc.id),
         .variant = try std.fmt.allocPrint(state.allocator, "0", .{}),
         .skeleton_asset = skeleton_asset,
         .bone_pose = bone_pose,
-        .editor_only = true,
+        .editor_only = false,
     };
     fillCheckerTexture(obj.texture, TextureSize, doc.base_color.r, doc.base_color.g, doc.base_color.b);
-    try project_editor_prop_asset.applyAssetMaterialTexture(state.allocator, &obj, entry.id);
+    try project_editor_prop_asset.applyAssetMaterialTexture(state.allocator, &obj, doc.id);
     applyPlacementToggles(state, &obj);
     finalizeGroundPosition(state, &obj);
     try appendPlacedObject(state, obj);

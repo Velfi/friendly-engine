@@ -180,7 +180,7 @@ pub fn resumeMainRenderPass(self: anytype, color_load: sdl_gpu.SDL_GPULoadOp, de
         else
             self.swapchain_texture,
         .load_op = color_load,
-        .store_op = if (uses_msaa) sdl_gpu.SDL_GPU_STOREOP_RESOLVE else sdl_gpu.SDL_GPU_STOREOP_STORE,
+        .store_op = if (uses_msaa) sdl_gpu.SDL_GPU_STOREOP_RESOLVE_AND_STORE else sdl_gpu.SDL_GPU_STOREOP_STORE,
     };
     if (uses_msaa) {
         color_target.resolve_texture = if (self.scene_color_hdr_active)
@@ -192,7 +192,7 @@ pub fn resumeMainRenderPass(self: anytype, color_load: sdl_gpu.SDL_GPULoadOp, de
         .texture = self.depth_texture,
         .clear_depth = 1,
         .load_op = depth_load,
-        .store_op = sdl_gpu.SDL_GPU_STOREOP_DONT_CARE,
+        .store_op = sdl_gpu.SDL_GPU_STOREOP_STORE,
         .stencil_load_op = sdl_gpu.SDL_GPU_LOADOP_DONT_CARE,
         .stencil_store_op = sdl_gpu.SDL_GPU_STOREOP_DONT_CARE,
     };

@@ -4,10 +4,6 @@ const manifest = @import("manifest.zig");
 const fcell = @import("fcell.zig");
 const root = @import("stream.zig");
 const StreamManager = root.StreamManager;
-const StreamConfig = root.StreamConfig;
-const makeCell = root.makeCell;
-const makeManifest = root.makeManifest;
-const expectActive = root.expectActive;
 
 test "stream manager loads 3x3 and unloads outer ring" {
     var tmp = std.testing.tmpDir(.{});
@@ -97,6 +93,126 @@ test "stream manager loads 3x3 and unloads outer ring" {
     try std.testing.expect(containsCellId(second_update.loaded_ids, .{ .x = 2, .y = 0, .z = 0 }));
     try std.testing.expect(containsCellId(second_update.unloaded_ids, .{ .x = -1, .y = 0, .z = 0 }));
     try std.testing.expectEqual(@as(usize, 9), manager.activeCellCount());
+}
+
+test "stream manager includes cells in the camera view cone" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    try tmp.dir.writeFile(std.testing.io, .{
+        .sub_path = "world.kdl",
+        .data =
+        \\world version=1 id="main" cell_size_m=256 {
+        \\  cell coord="-1,0,0" authoring="scenes/west.kdl"
+        \\  cell coord="0,0,0" authoring="scenes/main.kdl"
+        \\  cell coord="1,0,0" authoring="scenes/east.kdl"
+        \\  cell coord="0,1,0" authoring="scenes/north.kdl"
+        \\}
+        \\
+        ,
+    });
+
+    try writeBakedCell(&tmp, .{ .x = -1, .y = 0, .z = 0 });
+    try writeBakedCell(&tmp, .{ .x = 0, .y = 0, .z = 0 });
+    try writeBakedCell(&tmp, .{ .x = 1, .y = 0, .z = 0 });
+    try writeBakedCell(&tmp, .{ .x = 0, .y = 1, .z = 0 });
+
+    const project_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(project_path);
+    var loaded_manifest = try manifest.loadManifest(std.testing.allocator, std.testing.io, project_path, "world.kdl");
+    defer loaded_manifest.deinit();
+    var manager = try StreamManager.init(std.testing.allocator, std.testing.io, project_path, "client-debug", &loaded_manifest);
+    defer manager.deinit();
+
+    manager.active_radius_cells = 0;
+    manager.interior_mode = .disabled;
+
+    const east = try manager.updateAroundView(.{
+        .position = .{ .x = 128, .y = 2, .z = 128 },
+        .forward = .{ .x = 1, .y = 0, .z = 0 },
+        .fov_y_rad = 1.0,
+        .aspect = 16.0 / 9.0,
+        .far_distance_m = 300,
+    });
+    try std.testing.expectEqual(@as(usize, 2), east.loaded);
+    try std.testing.expect(manager.active_cells.contains(.{ .x = 0, .y = 0, .z = 0 }));
+    try std.testing.expect(manager.active_cells.contains(.{ .x = 1, .y = 0, .z = 0 }));
+    try std.testing.expect(!manager.active_cells.contains(.{ .x = -1, .y = 0, .z = 0 }));
+    try std.testing.expect(!manager.active_cells.contains(.{ .x = 0, .y = 1, .z = 0 }));
+
+    const west = try manager.updateAroundView(.{
+        .position = .{ .x = 128, .y = 2, .z = 128 },
+        .forward = .{ .x = -1, .y = 0, .z = 0 },
+        .fov_y_rad = 1.0,
+        .aspect = 16.0 / 9.0,
+        .far_distance_m = 300,
+    });
+    try std.testing.expectEqual(@as(usize, 1), west.loaded);
+    try std.testing.expectEqual(@as(usize, 1), west.unloaded);
+    try std.testing.expect(manager.active_cells.contains(.{ .x = -1, .y = 0, .z = 0 }));
+    try std.testing.expect(!manager.active_cells.contains(.{ .x = 1, .y = 0, .z = 0 }));
+}
+
+test "stream manager activates async cell loads after completion" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    try tmp.dir.writeFile(std.testing.io, .{
+        .sub_path = "world.kdl",
+        .data =
+        \\world version=1 id="main" cell_size_m=256 {
+        \\  cell coord="0,0,0" authoring="scenes/main.kdl"
+        \\  cell coord="1,0,0" authoring="scenes/east.kdl"
+        \\}
+        \\
+        ,
+    });
+
+    try writeBakedCell(&tmp, .{ .x = 0, .y = 0, .z = 0 });
+    try writeBakedCell(&tmp, .{ .x = 1, .y = 0, .z = 0 });
+
+    const project_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(project_path);
+    var loaded_manifest = try manifest.loadManifest(std.testing.allocator, std.testing.io, project_path, "world.kdl");
+    defer loaded_manifest.deinit();
+    var manager = try StreamManager.init(std.testing.allocator, std.testing.io, project_path, "client-debug", &loaded_manifest);
+    defer manager.deinit();
+
+    manager.active_radius_cells = 0;
+    manager.interior_mode = .disabled;
+    manager.max_loads_per_update = 1;
+    manager.enableAsyncLoading(std.heap.smp_allocator);
+
+    const view = root.ViewPolicy{
+        .position = .{ .x = 128, .y = 2, .z = 128 },
+        .forward = .{ .x = 1, .y = 0, .z = 0 },
+        .fov_y_rad = 1.0,
+        .aspect = 16.0 / 9.0,
+        .far_distance_m = 300,
+    };
+
+    const first = try manager.updateAroundView(view);
+    try std.testing.expectEqual(@as(usize, 1), first.loaded);
+    try std.testing.expectEqual(@as(usize, 1), first.pending_loads);
+    const first_progress = manager.progressSnapshot();
+    try std.testing.expect(first_progress.async_loading);
+    try std.testing.expectEqual(@as(usize, 2), first_progress.desired_cells);
+    try std.testing.expectEqual(@as(usize, 1), first_progress.active_cells);
+    try std.testing.expectEqual(@as(usize, 1), first_progress.pending_loads);
+    try std.testing.expectEqual(@as(u64, 1), first_progress.queued_loads_total);
+    try std.testing.expect(manager.active_cells.contains(.{ .x = 0, .y = 0, .z = 0 }));
+    try std.testing.expect(!manager.active_cells.contains(.{ .x = 1, .y = 0, .z = 0 }));
+
+    var attempts: usize = 0;
+    while (!manager.active_cells.contains(.{ .x = 1, .y = 0, .z = 0 }) and attempts < 100) : (attempts += 1) {
+        std.Thread.sleep(std.time.ns_per_ms);
+        _ = try manager.updateAroundView(view);
+    }
+    try std.testing.expect(manager.active_cells.contains(.{ .x = 1, .y = 0, .z = 0 }));
+    const final_progress = manager.progressSnapshot();
+    try std.testing.expectEqual(@as(usize, 2), final_progress.active_cells);
+    try std.testing.expectEqual(@as(u64, 1), final_progress.completed_loads_total);
+    try std.testing.expectEqual(@as(u64, 0), final_progress.failed_loads_total);
 }
 
 test "stream manager includes interior children for active parent cell" {

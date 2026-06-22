@@ -198,6 +198,7 @@ fn applyBlenderShadingSelection(state: *ProjectEditorState, key: editor_draw.SDL
         0x33 => setShadingMode(state, .solid, "Solid"), // 3
         0x34 => setShadingMode(state, .material_preview, "Material Preview"), // 4
         0x35 => setShadingMode(state, .rendered, "Rendered"), // 5
+        0x36 => setShadingMode(state, .lod_debug, "LOD Debug"), // 6
         else => return false,
     }
     return true;
@@ -309,6 +310,24 @@ test "z hotkey opens blender shading selection and number keys choose modes" {
     });
     try applyKeyboard(&state, &acc);
     try std.testing.expectEqual(project_editor_state.ShadingMode.rendered, state.shading_mode);
+
+    acc.beginFrame();
+    try acc.key_events.append(std.testing.allocator, .{
+        .key = 0x7a,
+        .mod = 0,
+        .down = true,
+        .repeat = false,
+    });
+    try applyKeyboard(&state, &acc);
+    acc.beginFrame();
+    try acc.key_events.append(std.testing.allocator, .{
+        .key = 0x36,
+        .mod = 0,
+        .down = true,
+        .repeat = false,
+    });
+    try applyKeyboard(&state, &acc);
+    try std.testing.expectEqual(project_editor_state.ShadingMode.lod_debug, state.shading_mode);
 }
 
 test "tab hotkey cycles shared selection scope" {

@@ -223,6 +223,8 @@ fn run(init: std.process.Init) !void {
             stream_stage.fail(err);
             return err;
         };
+        stream_manager.?.enableAsyncLoading(std.heap.smp_allocator);
+        stream_manager.?.max_loads_per_update = 2;
         stream_stage.end();
         friendly_engine.game.setStreamManager(&stream_manager.?);
         cell_state = try friendly_engine.game.cell_spawn.CellSpawnState.initWithProject(std.heap.page_allocator, init.io, options.project_path);
@@ -230,20 +232,8 @@ fn run(init: std.process.Init) !void {
 
         if (cell_state) |*state| {
             const scene_stage = LifecycleStage.begin("loading_scene");
-            scene_bootstrap.loadAndSpawn(
-                std.heap.page_allocator,
-                init.io,
-                &state.scene_state,
-                world,
-                options.project_path,
-                startup_scene,
-                if (runtime_bundle) |*bundle| bundle else null,
-            ) catch |err| {
-                scene_stage.fail(err);
-                return err;
-            };
             active_scene_state = &state.scene_state;
-            view.loadFromProject(
+            view.loadStartupControlFromProject(
                 init.io,
                 options.project_path,
                 startup_scene,
@@ -258,7 +248,7 @@ fn run(init: std.process.Init) !void {
 
         if (stream_manager) |*manager| {
             const initial_stream_stage = LifecycleStage.begin("loading_initial_cells");
-            const update = manager.updateAroundPosition(cameraTargetPosition(&view)) catch |err| {
+            const update = manager.updateAroundView(streamViewPolicy(&view, &backend)) catch |err| {
                 if (err == error.FileNotFound) {
                     log.err("startup.loading_initial_cells.help reason=missing_baked_cell action=\"Run Recompile Cells in the editor, or run `zig build run-tools -- world-bake --project {s} --world {s} --target client-debug` before Play. The world_file_io log line above names the exact missing cell.\"", .{
                         options.project_path,
@@ -278,6 +268,10 @@ fn run(init: std.process.Init) !void {
                     return err;
                 };
                 active_scene_state = &state.scene_state;
+                view.resolveFpsSpawnOnTerrain(active_scene_state) catch |err| {
+                    initial_stream_stage.fail(err);
+                    return err;
+                };
             } else unreachable;
             log.info("startup.loading_initial_cells.result loaded={d} unloaded={d} pending={d} active={d}", .{
                 update.loaded,
@@ -339,6 +333,10 @@ fn run(init: std.process.Init) !void {
             startup_scene,
             if (runtime_bundle) |*bundle| bundle else null,
         ) catch |err| {
+            camera_stage.fail(err);
+            return err;
+        };
+        view.resolveFpsSpawnOnTerrain(active_scene_state) catch |err| {
             camera_stage.fail(err);
             return err;
         };
@@ -413,7 +411,7 @@ fn run(init: std.process.Init) !void {
         {
             const stage = if (!first_frame_logged) LifecycleStage.begin("first_frame.streaming") else null;
             if (stream_manager) |*manager| {
-                const update = try manager.updateAroundPosition(cameraTargetPosition(&view));
+                const update = try manager.updateAroundView(streamViewPolicy(&view, &backend));
                 try atmosphere_state.syncFromManager(manager, cameraTargetPosition(&view));
                 if (update.changed()) {
                     if (cell_state) |*state| {
@@ -512,6 +510,21 @@ fn cameraTargetPosition(view: *const scene_view.SceneView) friendly_engine.core.
         .x = view.camera.target.x,
         .y = view.camera.target.y,
         .z = view.camera.target.z,
+    };
+}
+
+fn streamViewPolicy(
+    view: *const scene_view.SceneView,
+    backend: *const desktop_backend.DesktopClientBackend,
+) friendly_engine.world.stream.ViewPolicy {
+    const eye = view.camera.eye();
+    const forward = view.camera.forward();
+    return .{
+        .position = .{ .x = eye.x, .y = eye.y, .z = eye.z },
+        .forward = .{ .x = forward.x, .y = forward.y, .z = forward.z },
+        .fov_y_rad = view.camera.fov_y,
+        .aspect = @as(f32, @floatFromInt(backend.output_width)) / @as(f32, @floatFromInt(backend.output_height)),
+        .far_distance_m = shared.editor_math.effectiveFarClip(view.camera),
     };
 }
 

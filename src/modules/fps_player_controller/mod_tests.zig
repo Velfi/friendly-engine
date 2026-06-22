@@ -139,6 +139,46 @@ test "fps controller reports out of breath when eye stays underwater" {
     try std.testing.expectEqual(@as(f32, 0), result.breath_remaining_seconds);
 }
 
+test "fps controller resolves authored start onto terrain heightfield" {
+    const heights = [_]f32{
+        10, 12,
+        14, 16,
+    };
+    const surface = fps.TerrainHeightfield{
+        .position = .{ .x = 100, .y = 0, .z = 200 },
+        .size = 2,
+        .offset = .{ .x = -10, .y = 0, .z = -10 },
+        .scale = .{ .x = 20, .y = 1, .z = 20 },
+        .heights = &heights,
+    };
+
+    const height = fps.sampleTerrainHeightfield(surface, 100, 200) orelse return error.MissingTerrainUnderPlayerStart;
+    const position = try fps.resolveTerrainSpawnPosition(
+        .{ .x = 100, .y = 0, .z = 200 },
+        height,
+        .{ .terrain_spawn_clearance_m = 0.25 },
+    );
+
+    try std.testing.expectApproxEqAbs(@as(f32, 13), height, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 13.25), position.y, 0.001);
+}
+
+test "fps controller terrain spawn requires terrain under marker" {
+    const heights = [_]f32{
+        0, 0,
+        0, 0,
+    };
+    const surface = fps.TerrainHeightfield{
+        .position = .{ .x = 0, .y = 0, .z = 0 },
+        .size = 2,
+        .offset = .{ .x = 0, .y = 0, .z = 0 },
+        .scale = .{ .x = 1, .y = 1, .z = 1 },
+        .heights = &heights,
+    };
+
+    try std.testing.expect(fps.sampleTerrainHeightfield(surface, 3, 3) == null);
+}
+
 test "fps ecs state attaches controller to live entities and updates position" {
     var world = framework.World.init(std.testing.allocator);
     defer world.deinit();

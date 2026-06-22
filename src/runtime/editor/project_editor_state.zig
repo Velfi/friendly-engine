@@ -32,6 +32,7 @@ const project_editor_skinning = @import("project_editor_skinning.zig");
 const editor_frame_perf = @import("editor_frame_perf.zig");
 const project_editor_mode_config = @import("project_editor_mode_config.zig");
 const project_editor_mode_gems = @import("project_editor_mode_gems.zig");
+const project_settings = @import("project_editor_project_settings.zig");
 
 pub const SceneObject = scene_object.SceneObject;
 pub const EditorMode = project_editor_types.EditorMode;
@@ -214,6 +215,9 @@ pub const ProjectEditorState = struct {
     world_region_rename_id_len: usize = 0,
     selected_ocean_clip_point: ?usize = null,
     world_draw_distance_m: f32 = editor_math.editor_camera_far_m,
+    terrain_detail_distance_m: f32 = 2048.0,
+    terrain_preview_max_resident_cells: u32 = 256,
+    terrain_preview_max_loads_per_refresh: u32 = 16,
     world_brush_size: f32 = 8.0,
     world_brush_strength: f32 = 0.65,
     world_brush_falloff: f32 = 0.75,
@@ -702,6 +706,12 @@ fn loadActiveProjectPaths(self: *ProjectEditorState) !void {
     }
     self.active_world_manifest_path = try self.allocator.dupe(u8, try config.worldForScene(config.startupScene()));
     self.active_world_manifest_path_owned = true;
+    try project_settings.ensureDefaultInProject(self.allocator, self.io, self.project_path);
+    const settings = try project_settings.loadInProject(self.allocator, self.io, self.project_path);
+    self.world_draw_distance_m = settings.terrain_preview.landmark_draw_distance_m;
+    self.terrain_detail_distance_m = settings.terrain_preview.detail_distance_m;
+    self.terrain_preview_max_resident_cells = settings.terrain_preview.max_resident_cells;
+    self.terrain_preview_max_loads_per_refresh = settings.terrain_preview.max_loads_per_refresh;
     self.enabled_editor_modes = try project_editor_mode_gems.flagsFromEnabledModules(self.allocator, config.enabledModules());
     if (!project_editor_mode_config.modeEnabled(self.enabled_editor_modes, self.mode)) {
         self.mode = project_editor_mode_config.firstEnabledMode(self.enabled_editor_modes) orelse return error.NoEditorModesEnabled;
@@ -793,7 +803,8 @@ fn centerInitialWorldCamera(self: *ProjectEditorState) !void {
     const diagonal = @max(loaded_manifest.cell_size_m, @sqrt(extent_x * extent_x + extent_z * extent_z));
     self.camera.distance = @max(6.0, span * 0.72);
     self.camera.max_distance = @max(6.0, diagonal * 1.25);
-    self.world_draw_distance_m = @max(loaded_manifest.cell_size_m * 2.0, diagonal * 1.75);
+    self.world_draw_distance_m = @max(self.world_draw_distance_m, @max(loaded_manifest.cell_size_m * 2.0, diagonal * 1.75));
+    self.terrain_detail_distance_m = @max(self.terrain_detail_distance_m, loaded_manifest.cell_size_m * 2.0);
     self.camera.far_clip_m = self.world_draw_distance_m;
     const initial_height = project_editor_terrain_preview.sampleHeightAtPoint(self, self.camera.target) catch |err| switch (err) {
         error.WorldCellNotInManifest, error.TerrainTileNotFound => 0.0,

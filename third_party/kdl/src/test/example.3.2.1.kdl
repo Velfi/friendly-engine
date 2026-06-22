@@ -1,0 +1,5 @@
+// `foo` will have an Argument value list like `[1, 3]`.
+foo 1 key=val 3 {
+    bar
+    (role)baz 1 2
+}

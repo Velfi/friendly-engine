@@ -42,6 +42,7 @@ pub const SceneObject = struct {
     id: u64 = 0,
     name: []u8 = "",
     mesh: geometry.Mesh,
+    local_bounds: LocalBounds = .{},
     position: editor_math.Vec3,
     rotation: editor_math.Vec3 = .{ .x = 0, .y = 0, .z = 0 },
     scale: editor_math.Vec3,
@@ -70,6 +71,12 @@ pub const SceneObject = struct {
             editor_math.Mat4.mul(editor_math.Mat4.rotationEuler(self.rotation), editor_math.Mat4.scale(self.scale)),
         );
     }
+};
+
+pub const LocalBounds = struct {
+    min: editor_math.Vec3 = .{ .x = 0, .y = 0, .z = 0 },
+    max: editor_math.Vec3 = .{ .x = 0, .y = 0, .z = 0 },
+    empty: bool = true,
 };
 
 pub const SceneView = struct {
@@ -155,6 +162,24 @@ pub const SceneView = struct {
         try self.loadFromScene(loaded);
     }
 
+    pub fn loadStartupControlFromProject(
+        self: *SceneView,
+        io: std.Io,
+        project_path: []const u8,
+        scene_rel_path: []const u8,
+        bundle: ?*const friendly_engine.framework.bundle_loader.RuntimeBundle,
+    ) !void {
+        var loaded = try scene_io.loadScene(self.allocator, io, project_path, scene_rel_path, bundle);
+        defer loaded.deinit(self.allocator);
+        try self.loadStartupControlFromScene(loaded);
+    }
+
+    pub fn loadStartupControlFromScene(self: *SceneView, loaded: scene_io.LoadedScene) !void {
+        self.destroyCharacters();
+        self.clearSceneData();
+        try self.applyStartupControl(loaded.objects);
+    }
+
     pub fn loadFromScene(self: *SceneView, loaded: scene_io.LoadedScene) !void {
         self.destroyCharacters();
         self.clearSceneData();
@@ -162,10 +187,13 @@ pub const SceneView = struct {
 
         for (loaded.objects) |entry| {
             if (!shouldRenderSceneObject(entry)) continue;
+            var mesh = try geometry.duplicateMesh(self.allocator, &entry.mesh);
+            errdefer mesh.deinit(self.allocator);
             try self.objects.append(self.allocator, .{
                 .id = entry.id,
                 .name = try self.allocator.dupe(u8, entry.name),
-                .mesh = try geometry.duplicateMesh(self.allocator, &entry.mesh),
+                .mesh = mesh,
+                .local_bounds = localBoundsForMesh(mesh),
                 .position = entry.position,
                 .rotation = entry.rotation,
                 .scale = entry.scale,
@@ -284,6 +312,25 @@ pub const SceneView = struct {
             appendGrassInfluencer(out, &count, obj.position, 1.5 * @max(0.5, obj.scale.x), 0.85);
         }
         return out[0..count];
+    }
+
+    pub fn resolveFpsSpawnOnTerrain(self: *SceneView, state: *scene_spawn.SceneSpawnState) !void {
+        if (self.controller_kind != .fps) return;
+        const terrain_height_m = fpsTerrainHeightAt(state, self.fps_body_position.x, self.fps_body_position.z) orelse {
+            std.log.err(
+                "fps player start requires loaded terrain under x={d:.3} z={d:.3}",
+                .{ self.fps_body_position.x, self.fps_body_position.z },
+            );
+            return error.MissingTerrainUnderPlayerStart;
+        };
+        self.fps_body_position = try fps_controller.resolveTerrainSpawnPosition(
+            self.fps_body_position,
+            terrain_height_m,
+            self.fps_config,
+        );
+        self.fps_state.grounded = true;
+        self.fps_state.vertical_velocity_mps = 0;
+        self.syncCameraFromFps();
     }
 
     pub fn updateActiveController(
@@ -425,6 +472,7 @@ pub const SceneView = struct {
 
         try self.objects.append(self.allocator, .{
             .mesh = mesh,
+            .local_bounds = localBoundsForMesh(mesh),
             .position = .{ .x = 0, .y = 0.5, .z = 0 },
             .scale = .{ .x = 1, .y = 1, .z = 1 },
             .texture = tex,
@@ -448,8 +496,10 @@ pub const SceneView = struct {
             const indices = try self.allocator.dupe(u32, stored.indices);
             errdefer self.allocator.free(indices);
 
+            const mesh = geometry.Mesh{ .vertices = verts, .indices = indices };
             try self.objects.append(self.allocator, .{
-                .mesh = .{ .vertices = verts, .indices = indices },
+                .mesh = mesh,
+                .local_bounds = localBoundsForMesh(mesh),
                 .position = .{ .x = 0, .y = 0, .z = 0 },
                 .scale = .{ .x = 1, .y = 1, .z = 1 },
                 .texture = try self.allocator.dupe(u8, stored.texture),
@@ -591,6 +641,7 @@ pub const SceneView = struct {
             .texture = texture,
             .base_color = .{ .r = 80, .g = 230, .b = 170, .a = 255 },
         });
+        self.objects.items[index].local_bounds = localBoundsForMesh(self.objects.items[index].mesh);
         self.scripted_debug_capsule_index = index;
     }
 
@@ -600,6 +651,21 @@ pub const SceneView = struct {
         self.objects.items[index].position = self.scripted_body_position;
     }
 };
+
+pub fn localBoundsForMesh(mesh: geometry.Mesh) LocalBounds {
+    if (mesh.vertices.len == 0) return .{};
+    var min = mesh.vertices[0].position;
+    var max = min;
+    for (mesh.vertices[1..]) |vertex| {
+        min.x = @min(min.x, vertex.position.x);
+        min.y = @min(min.y, vertex.position.y);
+        min.z = @min(min.z, vertex.position.z);
+        max.x = @max(max.x, vertex.position.x);
+        max.y = @max(max.y, vertex.position.y);
+        max.z = @max(max.z, vertex.position.z);
+    }
+    return .{ .min = min, .max = max, .empty = false };
+}
 
 fn groundedFromCharacter(character_slot: *?physics3d.character.Character) bool {
     if (character_slot.*) |*character| return physics3d.character.isGrounded(character.groundState());
@@ -753,6 +819,26 @@ fn sampleHeightfield(position: editor_math.Vec3, heightfield: physics3d.HeightFi
     return position.y + heightfield.offset.y + std.math.lerp(hx0, hx1, tz) * heightfield.scale.y;
 }
 
+fn fpsTerrainHeightAt(state: *scene_spawn.SceneSpawnState, x: f32, z: f32) ?f32 {
+    var best: ?f32 = null;
+    for (state.entities.items) |entity| {
+        const transform = state.transforms.get(entity) orelse continue;
+        const body = state.physics_bodies.get(entity) orelse continue;
+        const height = switch (body.shape) {
+            .heightfield => |heightfield| fps_controller.sampleTerrainHeightfield(.{
+                .position = transform.position,
+                .size = heightfield.size,
+                .offset = heightfield.offset,
+                .scale = heightfield.scale,
+                .heights = heightfield.heights,
+            }, x, z),
+            else => null,
+        } orelse continue;
+        if (best == null or height > best.?) best = height;
+    }
+    return best;
+}
+
 fn applyScriptedCamera(self: *SceneView, camera: luajit.ScriptedCamera) void {
     const distance = @sqrt(camera.offset.x * camera.offset.x + camera.offset.y * camera.offset.y + camera.offset.z * camera.offset.z);
     self.camera.target = .{ .x = camera.target.x, .y = camera.target.y, .z = camera.target.z };
@@ -798,7 +884,6 @@ fn isTerrainSceneObject(obj: *const SceneObject) bool {
         if (equalsIgnoreCase(property.key, "type") and equalsIgnoreCase(property.value, "terrain")) return true;
         if (equalsIgnoreCase(property.key, "kind") and equalsIgnoreCase(property.value, "terrain")) return true;
         if (equalsIgnoreCase(property.key, "role") and equalsIgnoreCase(property.value, "terrain")) return true;
-        if (equalsIgnoreCase(property.key, "spawn_surface") and equalsIgnoreCase(property.value, "terrain")) return true;
     }
     return false;
 }
@@ -985,6 +1070,95 @@ test "scene view starts camera at explicit fps player start and hides marker" {
     try std.testing.expectApproxEqAbs(@as(f32, 0.2), view.camera.pitch, 0.001);
     try std.testing.expectApproxEqAbs(@as(f32, -1.0), view.camera.yaw, 0.001);
     try std.testing.expectApproxEqAbs(@as(f32, 0.05), view.camera.distance, 0.001);
+}
+
+test "scene view startup control load does not import authored meshes" {
+    const objects = try std.testing.allocator.alloc(scene_io.SceneObjectData, 2);
+    objects[0] = try makeSceneViewTestObject(std.testing.allocator, 1, "Floor", .mesh, .{ .x = 0, .y = 0, .z = 0 }, null, &.{});
+    objects[1] = try makeSceneViewTestObject(std.testing.allocator, 2, "Player Start", .empty, .{ .x = 2, .y = 0.16, .z = 3 }, player_start_tag, &.{fps_controller_component});
+    var loaded = scene_io.LoadedScene{
+        .objects = objects,
+        .next_object_id = 3,
+        .animations = try std.testing.allocator.alloc(scene_animation.Clip, 0),
+        .skeletons = try std.testing.allocator.alloc(scene_animation.Skeleton, 0),
+    };
+    defer loaded.deinit(std.testing.allocator);
+
+    var view = try SceneView.init(std.testing.allocator, 320, 240);
+    defer view.deinit();
+    try view.loadStartupControlFromScene(loaded);
+
+    try std.testing.expectEqual(@as(usize, 0), view.objects.items.len);
+    try std.testing.expectEqual(SceneView.ControllerKind.fps, view.activeControllerKind());
+    try std.testing.expectApproxEqAbs(@as(f32, 2), view.camera.eye().x, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 3), view.camera.eye().z, 0.001);
+}
+
+test "scene view resolves fps player start onto loaded terrain" {
+    const objects = try std.testing.allocator.alloc(scene_io.SceneObjectData, 2);
+    objects[0] = try makeSceneViewTestObject(std.testing.allocator, 1, "Floor", .mesh, .{ .x = 0, .y = 0, .z = 0 }, null, &.{});
+    objects[1] = try makeSceneViewTestObject(std.testing.allocator, 2, "Player Start", .empty, .{ .x = 5, .y = 0, .z = 5 }, player_start_tag, &.{fps_controller_component});
+    var loaded = scene_io.LoadedScene{
+        .objects = objects,
+        .next_object_id = 3,
+        .animations = try std.testing.allocator.alloc(scene_animation.Clip, 0),
+        .skeletons = try std.testing.allocator.alloc(scene_animation.Skeleton, 0),
+    };
+    defer loaded.deinit(std.testing.allocator);
+
+    var view = try SceneView.init(std.testing.allocator, 320, 240);
+    defer view.deinit();
+    try view.loadFromScene(loaded);
+
+    var world = friendly_engine.framework.World.init(std.testing.allocator);
+    defer world.deinit();
+    var state = scene_spawn.SceneSpawnState.init(std.testing.allocator);
+    defer state.deinit();
+    const heights = try std.testing.allocator.dupe(f32, &[_]f32{
+        10, 12,
+        14, 16,
+    });
+    _ = try state.spawnPhysicsBody(&world, .{
+        .position = .{ .x = 5, .y = 0, .z = 5 },
+        .scale = .{ .x = 1, .y = 1, .z = 1 },
+    }, .{
+        .kind = .static,
+        .mass = 0,
+        .shape = .{ .heightfield = .{
+            .size = 2,
+            .block_size = 2,
+            .offset = .{ .x = -5, .y = 0, .z = -5 },
+            .scale = .{ .x = 10, .y = 1, .z = 10 },
+            .envelope_half = .{ .x = 5, .y = 8, .z = 5 },
+            .heights = heights,
+        } },
+    });
+
+    try view.resolveFpsSpawnOnTerrain(&state);
+
+    try std.testing.expectApproxEqAbs(@as(f32, 13.16), view.fps_body_position.y, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 14.78), view.camera.eye().y, 0.001);
+}
+
+test "scene view rejects fps player start without loaded terrain" {
+    const objects = try std.testing.allocator.alloc(scene_io.SceneObjectData, 2);
+    objects[0] = try makeSceneViewTestObject(std.testing.allocator, 1, "Floor", .mesh, .{ .x = 0, .y = 0, .z = 0 }, null, &.{});
+    objects[1] = try makeSceneViewTestObject(std.testing.allocator, 2, "Player Start", .empty, .{ .x = 5, .y = 0, .z = 5 }, player_start_tag, &.{fps_controller_component});
+    var loaded = scene_io.LoadedScene{
+        .objects = objects,
+        .next_object_id = 3,
+        .animations = try std.testing.allocator.alloc(scene_animation.Clip, 0),
+        .skeletons = try std.testing.allocator.alloc(scene_animation.Skeleton, 0),
+    };
+    defer loaded.deinit(std.testing.allocator);
+
+    var view = try SceneView.init(std.testing.allocator, 320, 240);
+    defer view.deinit();
+    try view.loadFromScene(loaded);
+
+    var state = scene_spawn.SceneSpawnState.init(std.testing.allocator);
+    defer state.deinit();
+    try std.testing.expectError(error.MissingTerrainUnderPlayerStart, view.resolveFpsSpawnOnTerrain(&state));
 }
 
 test "scene view hides stale visible player start marker" {

@@ -23,6 +23,14 @@ pub const SceneDrawable = struct {
     mesh_index: u32,
     mesh_asset: core.AssetId,
     material_asset: core.AssetId,
+    source_kind: MeshSourceKind = .generic,
+
+    pub fn doubleSided(self: SceneDrawable) bool {
+        return switch (self.source_kind) {
+            .terrain => false,
+            .generic, .water, .internal => true,
+        };
+    }
 };
 
 pub const StoredVertex = struct {
@@ -181,6 +189,7 @@ pub const SceneSpawnState = struct {
             .mesh_index = mesh_index,
             .mesh_asset = mesh_asset,
             .material_asset = material_asset,
+            .source_kind = desc.source_kind,
         });
         if (desc.physics) |physics_body| {
             try self.physics_bodies.set(entity, physics_body);
@@ -352,9 +361,21 @@ test "scene spawn creates entities with components" {
 
     const drawable = state.drawables.get(entity).?;
     try std.testing.expectEqual(@as(u32, 0), drawable.mesh_index);
+    try std.testing.expectEqual(MeshSourceKind.generic, drawable.source_kind);
+    try std.testing.expect(drawable.doubleSided());
     try std.testing.expect(state.physics_bodies.get(entity) != null);
     try std.testing.expectEqual(@as(usize, 2), world.assets.count());
     try state.addDrawBatch(0, .{ .x = 2, .y = 0, .z = 0 }, .{ .x = 1, .y = 1, .z = 1 }, null);
     try std.testing.expectEqual(@as(usize, 1), state.draw_batches.items.len);
     try std.testing.expectEqual(@as(usize, 0), state.grass_batches.items.len);
+}
+
+test "terrain drawables are single sided" {
+    const drawable = SceneDrawable{
+        .mesh_index = 0,
+        .mesh_asset = 1,
+        .material_asset = 2,
+        .source_kind = .terrain,
+    };
+    try std.testing.expect(!drawable.doubleSided());
 }

@@ -43,22 +43,38 @@ fn heightForVertex(idx: u32) -> f32 {
     return 1.0;
 }
 
+fn safeNormalize3(value: vec3<f32>, fallback: vec3<f32>) -> vec3<f32> {
+    let len_sq = dot(value, value);
+    if (len_sq <= 0.000001) {
+        return fallback;
+    }
+    return value * inverseSqrt(len_sq);
+}
+
+fn safeNormalize2(value: vec2<f32>, fallback: vec2<f32>) -> vec2<f32> {
+    let len_sq = dot(value, value);
+    if (len_sq <= 0.000001) {
+        return fallback;
+    }
+    return value * inverseSqrt(len_sq);
+}
+
 @vertex
 fn main(input: VertexInput) -> VertexOutput {
     let local_idx = input.vertex_index % 6u;
     let side = sideForVertex(local_idx);
     let t = heightForVertex(local_idx);
     let root = input.position.xyz;
-    let terrain_normal = normalize(input.normal_height.xyz);
+    let terrain_normal = safeNormalize3(input.normal_height.xyz, vec3<f32>(0.0, 1.0, 0.0));
     let height = input.normal_height.w;
     let width = input.blade.x;
     let yaw = input.blade.y;
     let phase = input.blade.z;
     let variant = input.blade.w;
 
-    let right = normalize(vec3<f32>(cos(yaw), 0.0, sin(yaw)));
-    let forward = normalize(vec3<f32>(-sin(yaw), 0.0, cos(yaw)));
-    let wind_dir = normalize(uniforms.wind.xy + vec2<f32>(0.0001, 0.0));
+    let right = safeNormalize3(vec3<f32>(cos(yaw), 0.0, sin(yaw)), vec3<f32>(1.0, 0.0, 0.0));
+    let forward = safeNormalize3(vec3<f32>(-sin(yaw), 0.0, cos(yaw)), vec3<f32>(0.0, 0.0, 1.0));
+    let wind_dir = safeNormalize2(uniforms.wind.xy + vec2<f32>(0.0001, 0.0), vec2<f32>(1.0, 0.0));
     let wind_speed = uniforms.wind.z;
     let time = uniforms.wind.w;
     let wind_strength = uniforms.controls.x;
@@ -96,8 +112,8 @@ fn main(input: VertexInput) -> VertexOutput {
     world = world + forward * curl;
     world = world + vec3<f32>(bend.x, 0.0, bend.y);
 
-    var curved_normal = normalize(terrain_normal * 0.48 + right * side * 0.42 - forward * (0.18 + 0.22 * t));
-    curved_normal = normalize(curved_normal + vec3<f32>(bend.x, 0.0, bend.y) * 0.18);
+    var curved_normal = safeNormalize3(terrain_normal * 0.48 + right * side * 0.42 - forward * (0.18 + 0.22 * t), terrain_normal);
+    curved_normal = safeNormalize3(curved_normal + vec3<f32>(bend.x, 0.0, bend.y) * 0.18, terrain_normal);
 
     var output: VertexOutput;
     output.color = input.color;

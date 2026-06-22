@@ -235,6 +235,18 @@ fn hashSliceIdentity(comptime T: type, hasher: *std.hash.Wyhash, slice: []const 
     hasher.update(std.mem.asBytes(&slice.len));
     if (slice.len <= content_limit) {
         hasher.update(std.mem.sliceAsBytes(slice));
+        return;
+    }
+    const window = @max(@as(usize, 1), content_limit / 4);
+    const starts = [_]usize{
+        0,
+        slice.len / 3,
+        (slice.len * 2) / 3,
+        slice.len - window,
+    };
+    for (starts) |start_raw| {
+        const start = @min(start_raw, slice.len - window);
+        hasher.update(std.mem.sliceAsBytes(slice[start .. start + window]));
     }
 }
 
@@ -457,4 +469,24 @@ test "scene object hash ignores dynamic dissolve amount" {
     }};
 
     try std.testing.expectEqual(hashSceneObjects(&solid_object), hashSceneObjects(&dissolving));
+}
+
+test "scene object hash notices large texture tail changes" {
+    const geometry = @import("geometry.zig");
+    var mesh = try geometry.buildPrimitive(std.testing.allocator, .box, .{});
+    defer mesh.deinit(std.testing.allocator);
+
+    var texture = try std.testing.allocator.alloc(u8, gpu_scene.TextureSize * gpu_scene.TextureSize * 4);
+    defer std.testing.allocator.free(texture);
+    @memset(texture, 32);
+
+    const object = [_]gpu_scene.SceneGpuObject{.{
+        .mesh = &mesh,
+        .texture = texture,
+        .base_color = .{ .r = 255, .g = 255, .b = 255, .a = 255 },
+        .texture_usage = .terrain_mask,
+    }};
+    const before = hashSceneObjects(&object);
+    texture[texture.len - 1] = 240;
+    try std.testing.expect(before != hashSceneObjects(&object));
 }

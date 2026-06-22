@@ -2157,6 +2157,7 @@ fn propRenderModeLabel(mode: ShadingMode) []const u8 {
         .wireframe => "Wire",
         .solid => "Solid",
         .material_preview => "Material",
+        .lod_debug => "LOD",
         .rendered => "Rendered",
     };
 }
@@ -2166,6 +2167,7 @@ fn propRenderModeId(mode: ShadingMode) []const u8 {
         .wireframe => "ed-prop-view-wireframe",
         .solid => "ed-prop-view-solid",
         .material_preview => "ed-prop-view-material-preview",
+        .lod_debug => "ed-prop-view-lod-debug",
         .rendered => "ed-prop-view-rendered",
     };
 }
@@ -2174,6 +2176,7 @@ fn propRenderModeWidth(mode: ShadingMode) f32 {
     return switch (mode) {
         .wireframe, .solid => 58,
         .material_preview => 74,
+        .lod_debug => 58,
         .rendered => 84,
     };
 }

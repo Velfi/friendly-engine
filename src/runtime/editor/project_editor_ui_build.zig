@@ -304,9 +304,10 @@ fn buildViewportToolbar(ui: *core_ui.UiContext, state: *ProjectEditorState, view
     if ((try ui_widgets.iconButtonTip(ui, "ed-shading", "material", false, state.shading_mode.label())).clicked) {
         state.shading_mode = switch (state.shading_mode) {
             .rendered => .material_preview,
+            .lod_debug => .rendered,
             .material_preview => .solid,
             .solid => .wireframe,
-            .wireframe => .rendered,
+            .wireframe => .lod_debug,
         };
         project_editor_state.setStatus(state, state.shading_mode.label());
     }

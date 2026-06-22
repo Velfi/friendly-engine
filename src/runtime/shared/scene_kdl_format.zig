@@ -1,4 +1,5 @@
 const std = @import("std");
+const kdl = @import("kdl");
 const scene_document = @import("scene_document.zig");
 const scene_physics = @import("scene_physics.zig");
 const scene_blockout = @import("scene_blockout.zig");
@@ -85,7 +86,14 @@ pub fn formatScene(
         if (entity.properties.len > 0) {
             try writer.writeAll("    properties");
             for (entity.properties) |property| {
-                try writer.print(" {s}=\"{s}\"", .{ property.key, property.value });
+                const raw_value = if (std.mem.eql(u8, property.value, "\"\"")) "" else property.value;
+                const value = try kdl.string_utils.makeInlineString(allocator, raw_value);
+                defer allocator.free(value);
+                if (value.len >= 2 and value[0] == '"' and value[value.len - 1] == '"') {
+                    try writer.print(" {s}={s}", .{ property.key, value });
+                } else {
+                    try writer.print(" {s}=\"{s}\"", .{ property.key, value });
+                }
             }
             try writer.writeAll("\n");
         }

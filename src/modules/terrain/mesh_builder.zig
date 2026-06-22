@@ -307,6 +307,25 @@ test "buildLodMesh emits upward-facing terrain triangles" {
     try std.testing.expect(triangleNormalY(mesh.vertices, mesh.indices[3..6]) > 0.99);
 }
 
+test "buildLodMeshWithCutouts omits triangles inside cutout rect" {
+    const heights = [_]f32{
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+    };
+    const tile = HeightTile{ .size = 3, .heights = &heights };
+    const bounds = world.cell.boundsForCell(.{ .x = 0, .y = 0, .z = 0 }, 64, 32);
+    var mesh = try buildLodMeshWithCutouts(std.testing.allocator, bounds, tile, 3, 0, null, &.{.{
+        .min_x = 0,
+        .min_z = 0,
+        .max_x = 32,
+        .max_z = 32,
+    }});
+    defer mesh.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 18), mesh.indices.len);
+}
+
 test "buildLodMesh computes unit upward normals for flat terrain" {
     const heights = [_]f32{
         4, 4, 4,

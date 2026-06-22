@@ -1173,7 +1173,7 @@ fn executeCommand(
         const editor_state = state orelse return error.EditorStateRequired;
         const point_x = command.point_x orelse return error.MissingPoint;
         const point_z = command.point_z orelse return error.MissingPoint;
-        const point_y = command.point_y orelse (try sampleTerrainHeight(editor_state, point_x, point_z)) + project_editor_build.player_spawn_ground_clearance_m;
+        const point_y = command.point_y orelse 0;
         const object_name = try project_editor_build.setPlayerStart(
             editor_state,
             command.object,
@@ -1211,7 +1211,7 @@ fn executeCommand(
     if (std.mem.eql(u8, command.name, "focus-in-viewport")) {
         const editor_state = state orelse return error.EditorStateRequired;
         const idx = try findObjectIndex(editor_state, command.object orelse return error.MissingObject);
-        focusCameraOnObject(editor_state, idx, false);
+        try focusCameraOnObject(editor_state, idx, false);
         return std.fmt.allocPrint(allocator, "{{\"ok\":true,\"id\":\"{s}\",\"command\":\"{s}\",\"object\":\"{s}\"}}\n", .{
             command.id,
             command.name,
@@ -1221,7 +1221,7 @@ fn executeCommand(
     if (std.mem.eql(u8, command.name, "zoom-to-focus")) {
         const editor_state = state orelse return error.EditorStateRequired;
         const idx = try findObjectIndex(editor_state, command.object orelse return error.MissingObject);
-        focusCameraOnObject(editor_state, idx, true);
+        try focusCameraOnObject(editor_state, idx, true);
         return std.fmt.allocPrint(allocator, "{{\"ok\":true,\"id\":\"{s}\",\"command\":\"{s}\",\"object\":\"{s}\"}}\n", .{
             command.id,
             command.name,
@@ -1413,7 +1413,7 @@ fn conceptStatusJson(allocator: std.mem.Allocator, command: CommandFile, state: 
 
 pub fn focusSelectedObject(state: *ProjectEditorState, zoom: bool) !void {
     const idx = state.selected_object orelse return error.ObjectNotFound;
-    focusCameraOnObject(state, idx, zoom);
+    try focusCameraOnObject(state, idx, zoom);
 }
 
 fn screenshotImmediate(
@@ -1652,7 +1652,7 @@ fn vec3Length(vec: editor_math.Vec3) f32 {
     return @sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
 }
 
-fn focusCameraOnObject(state: *ProjectEditorState, idx: usize, zoom: bool) void {
+fn focusCameraOnObject(state: *ProjectEditorState, idx: usize, zoom: bool) !void {
     const obj = &state.objects.items[idx];
     selectObject(state, idx);
     state.camera.target = obj.position;

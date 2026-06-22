@@ -1,0 +1,13 @@
+node              blue
+string            green
+raw_string        magenta
+number            red
+keyword           blue
+equals            bright_white
+child_block_begin bright_white
+child_block_end   bright_white
+type_begin        bright_white
+type_end          bright_white
+comment           white
+slashdash         white
+whitespace        white

@@ -514,20 +514,10 @@ pub const DesktopClientBackend = struct {
     }
 
     fn sceneObjectCameraDistance(obj: *const scene_view.SceneObject, camera_eye: shared.editor_math.Vec3) f32 {
-        if (obj.mesh.vertices.len == 0) return shared.editor_math.Vec3.length(shared.editor_math.Vec3.sub(obj.position, camera_eye));
-        var min = obj.mesh.vertices[0].position;
-        var max = min;
-        for (obj.mesh.vertices[1..]) |vertex| {
-            min.x = @min(min.x, vertex.position.x);
-            min.y = @min(min.y, vertex.position.y);
-            min.z = @min(min.z, vertex.position.z);
-            max.x = @max(max.x, vertex.position.x);
-            max.y = @max(max.y, vertex.position.y);
-            max.z = @max(max.z, vertex.position.z);
-        }
-        const local_center = shared.editor_math.Vec3.scale(shared.editor_math.Vec3.add(min, max), 0.5);
+        if (obj.local_bounds.empty) return shared.editor_math.Vec3.length(shared.editor_math.Vec3.sub(obj.position, camera_eye));
+        const local_center = shared.editor_math.Vec3.scale(shared.editor_math.Vec3.add(obj.local_bounds.min, obj.local_bounds.max), 0.5);
         const world_center = obj.transform().transformPoint(local_center);
-        const half_extents = shared.editor_math.Vec3.scale(shared.editor_math.Vec3.sub(max, min), 0.5);
+        const half_extents = shared.editor_math.Vec3.scale(shared.editor_math.Vec3.sub(obj.local_bounds.max, obj.local_bounds.min), 0.5);
         const radius = @sqrt(
             (half_extents.x * obj.scale.x) * (half_extents.x * obj.scale.x) +
                 (half_extents.y * obj.scale.y) * (half_extents.y * obj.scale.y) +

@@ -121,6 +121,7 @@ pub const Accumulator = struct {
                 }
             },
             editor_draw.SDL_EVENT_MOUSE_WHEEL => {
+                self.input.mouse_position = .{ .x = event.wheel.mouse_x, .y = event.wheel.mouse_y };
                 self.input.scroll_delta_x += event.wheel.x;
                 self.input.scroll_delta_y += event.wheel.y;
                 self.input.scroll_direction_flipped = self.input.scroll_direction_flipped or
@@ -304,6 +305,34 @@ test "accumulator reads SDL3 wheel axes and precision fields" {
     try std.testing.expectEqual(@as(f32, -1.5), snap.scroll_delta_y);
     try std.testing.expect(snap.scroll_is_precise);
     try std.testing.expect(snap.scroll_direction_flipped);
+}
+
+test "accumulator updates pointer position from wheel events" {
+    var acc = Accumulator.init(std.testing.allocator);
+    defer acc.deinit();
+
+    acc.input.mouse_position = .{ .x = 12.0, .y = 16.0 };
+
+    try acc.feedEvent(&.{
+        .wheel = .{
+            .type = editor_draw.SDL_EVENT_MOUSE_WHEEL,
+            .reserved = 0,
+            .timestamp = 0,
+            .windowID = 1,
+            .which = 0,
+            .x = 0.0,
+            .y = -2.0,
+            .direction = editor_draw.SDL_MOUSEWHEEL_NORMAL,
+            .mouse_x = 268.0,
+            .mouse_y = 54.0,
+            .integer_x = 0,
+            .integer_y = -2,
+        },
+    });
+
+    const snap = acc.snapshot();
+    try std.testing.expectEqual(@as(f32, 268.0), snap.mouse_position.x);
+    try std.testing.expectEqual(@as(f32, 54.0), snap.mouse_position.y);
 }
 
 test "accumulator maps right stick to navigation scroll" {

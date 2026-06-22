@@ -73,7 +73,7 @@ pub fn beginFrame(self: anytype, width: u32, height: u32, clear: shared_color.Co
             .a = @as(f32, @floatFromInt(clear.a)) / 255.0,
         },
         .load_op = sdl_gpu.SDL_GPU_LOADOP_CLEAR,
-        .store_op = if (uses_msaa) sdl_gpu.SDL_GPU_STOREOP_RESOLVE else sdl_gpu.SDL_GPU_STOREOP_STORE,
+        .store_op = if (uses_msaa) sdl_gpu.SDL_GPU_STOREOP_RESOLVE_AND_STORE else sdl_gpu.SDL_GPU_STOREOP_STORE,
     };
     if (uses_msaa) {
         color_target.resolve_texture = if (render_hdr) self.hdr_color_texture else swapchain_texture;

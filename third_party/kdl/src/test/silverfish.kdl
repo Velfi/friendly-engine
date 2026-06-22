@@ -1,0 +1,14 @@
+addr "127.0.0.1:4000"
+loglevel debug
+hide-timestamps
+migrate
+from-email "Silverfish Dev <silverfish-dev@conjured.shop>"
+
+// these will usually just go in various user directories, but we want to keep
+// them local for dev.
+database-path "dev-local-files/db"
+uploads-path "dev-local-files/uploads"
+tmp-path "dev-local-files/tmp"
+themes-path "dev-local-files/themes"
+
+@include dev.secret.kdl

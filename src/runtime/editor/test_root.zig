@@ -95,6 +95,7 @@ pub const project_editor_prop_open = @import("project_editor_prop_open.zig");
 pub const project_editor_prop_placement = @import("project_editor_prop_placement.zig");
 pub const project_editor_prop_recent = @import("project_editor_prop_recent.zig");
 pub const project_editor_prop_tests = @import("project_editor_prop_tests.zig");
+pub const project_editor_project_settings = @import("project_editor_project_settings.zig");
 pub const project_editor_render = @import("project_editor_render.zig");
 pub const project_editor_render_viewport = @import("project_editor_render_viewport.zig");
 pub const project_editor_scatter_preview = @import("project_editor_scatter_preview.zig");

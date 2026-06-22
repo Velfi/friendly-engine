@@ -27,7 +27,6 @@ const batch_draw_radius_cells: f32 = 2;
 const batch_max_cells_loaded_per_refresh: usize = 4;
 const batch_max_resident_cells: usize = 25;
 const far_batch_texture_size: usize = splat_texture.TextureSize;
-const camera_terrain_clearance_m: f32 = 0.75;
 const max_editor_grass_preview_instances: usize = 1_500;
 const lod_transition_duration_s: f32 = 0.22;
 
@@ -104,6 +103,7 @@ pub const LodTransition = struct {
     mesh: geometry.Mesh,
     texture: []u8,
     base_color: shared_color.Color,
+    lod_index: usize,
     progress_s: f32 = 0,
 
     pub fn deinit(self: *LodTransition, allocator: std.mem.Allocator) void {
@@ -216,7 +216,7 @@ pub fn refreshIfStale(state: *ProjectEditorState) !void {
 
 pub fn maintainPreview(state: *ProjectEditorState) !void {
     if (!project_editor_state.worldContextVisible(state)) return;
-    state.camera.far_clip_m = @max(state.camera.far_clip_m, effectiveDrawDistance(state));
+    state.camera.far_clip_m = @max(state.camera.far_clip_m, state.world_draw_distance_m);
     markClipmapStaleIfNeeded(state);
     try refreshIfStale(state);
     keepCameraAboveTerrain(state);
@@ -298,26 +298,24 @@ pub fn refresh(state: *ProjectEditorState) !bool {
 
     var candidates = std.ArrayList(terrain_residency.Candidate).empty;
     defer candidates.deinit(state.allocator);
+    const draw_distance_m = effectiveDrawDistance(state);
     for (terrain_index.entries.items) |entry| {
         const id = entry.cell;
         if (!world_manifest.hasCell(id)) continue;
-        const draw_distance_m = effectiveDrawDistance(state);
-        if (!cellInClipmap(id, camera_target, world_manifest.cell_size_m, draw_distance_m)) continue;
+        if (terrainBatchActive(state) and !cellInClipmap(id, camera_target, world_manifest.cell_size_m, draw_distance_m)) continue;
 
-        const center = lod_pick.cellCenter(id, world_manifest.cell_size_m);
-        const distance = lod_pick.distanceToCellCenter(camera_eye, center);
+        const distance = lod_pick.distanceToCellFootprint(camera_eye, id, world_manifest.cell_size_m);
         try candidates.append(state.allocator, .{ .id = id, .distance_m = distance });
     }
 
     var residents = std.ArrayList(terrain_residency.Resident).empty;
     defer residents.deinit(state.allocator);
     for (state.terrain_preview.entries.items) |entry| {
-        const center = lod_pick.cellCenter(entry.snapshot.cell, world_manifest.cell_size_m);
-        const distance = lod_pick.distanceToCellCenter(camera_eye, center);
+        const distance = lod_pick.distanceToCellFootprint(camera_eye, entry.snapshot.cell, world_manifest.cell_size_m);
         try residents.append(state.allocator, .{ .id = entry.snapshot.cell, .distance_m = distance });
     }
 
-    const budget = previewBudget(state);
+    const budget = previewBudget(state, candidates.items.len);
     var plan = try terrain_residency.planUpdate(
         state.allocator,
         candidates.items,
@@ -462,8 +460,7 @@ fn candidateDistance(candidates: []const terrain_residency.Candidate, id: world.
 pub fn syncLodMeshes(state: *ProjectEditorState) !void {
     const camera_eye = cameraEyeVec(state);
     for (state.terrain_preview.entries.items) |*entry| {
-        const center = lod_pick.cellCenter(entry.snapshot.cell, state.world_cell_size_m);
-        const distance = lod_pick.distanceToCellCenter(camera_eye, center);
+        const distance = lod_pick.distanceToCellFootprint(camera_eye, entry.snapshot.cell, state.world_cell_size_m);
         const lod_index = editableTerrainLodIndex(distance, state.world_cell_size_m, entry.snapshot.lod_levels.len);
         if (lod_index == entry.lod_index) continue;
         try rebuildMeshInPlace(state.allocator, entry, lod_index);
@@ -569,11 +566,7 @@ pub fn sampleResidentHeightAtPoint(state: *const ProjectEditorState, point: edit
 }
 
 pub fn keepCameraAboveTerrain(state: *ProjectEditorState) void {
-    const terrain_y = sampleResidentHeightAtPoint(state, state.camera.eye()) orelse return;
-    const min_eye_y = terrain_y + camera_terrain_clearance_m;
-    const eye_y = state.camera.eye().y;
-    if (eye_y >= min_eye_y) return;
-    state.camera.target.y += min_eye_y - eye_y;
+    _ = state;
 }
 
 fn residentHeightAtPoint(entries: []const Entry, point: editor_math.Vec3) ?f32 {
@@ -630,7 +623,7 @@ pub fn appendGpuObjects(
             try gpu_objects.append(state.allocator, terrainSceneObject(
                 &transition.mesh,
                 transition.texture,
-                terrainPreviewColor(state, transition.base_color),
+                terrainPreviewColor(state, transition.base_color, transition.lod_index),
                 transition_t,
                 false,
             ));
@@ -639,7 +632,7 @@ pub fn appendGpuObjects(
         try gpu_objects.append(state.allocator, terrainSceneObject(
             &entry.mesh,
             entry.texture,
-            terrainPreviewColor(state, entry.base_color),
+            terrainPreviewColor(state, entry.base_color, entry.lod_index),
             if (entry.lod_transition != null) transition_t else 0,
             entry.lod_transition != null,
         ));
@@ -648,10 +641,7 @@ pub fn appendGpuObjects(
         try gpu_objects.append(state.allocator, terrainSceneObject(
             &batch.mesh,
             batch.texture,
-            if (state.shading_mode == .wireframe)
-                .{ .r = 135, .g = 220, .b = 160, .a = 255 }
-            else
-                batch.base_color,
+            terrainFarBatchPreviewColor(state, batch.base_color),
             0,
             false,
         ));
@@ -675,11 +665,29 @@ fn terrainSceneObject(
     };
 }
 
-fn terrainPreviewColor(state: *const ProjectEditorState, color: shared_color.Color) shared_color.Color {
-    return if (state.shading_mode == .wireframe)
-        .{ .r = 135, .g = 220, .b = 160, .a = 255 }
-    else
-        color;
+fn terrainPreviewColor(state: *const ProjectEditorState, base_color: shared_color.Color, lod_index: usize) shared_color.Color {
+    if (state.shading_mode == .wireframe) return .{ .r = 135, .g = 220, .b = 160, .a = 255 };
+    if (state.shading_mode != .lod_debug) return base_color;
+    return terrainLodColor(lod_index);
+}
+
+fn terrainFarBatchPreviewColor(state: *const ProjectEditorState, base_color: shared_color.Color) shared_color.Color {
+    if (state.shading_mode == .wireframe) return .{ .r = 135, .g = 220, .b = 160, .a = 255 };
+    if (state.shading_mode != .lod_debug) return base_color;
+    return terrainLodColor(terrain_lod_palette.len - 1);
+}
+
+const terrain_lod_palette = [_]shared_color.Color{
+    .{ .r = 67, .g = 190, .b = 100, .a = 255 },
+    .{ .r = 72, .g = 156, .b = 236, .a = 255 },
+    .{ .r = 239, .g = 197, .b = 67, .a = 255 },
+    .{ .r = 234, .g = 112, .b = 64, .a = 255 },
+    .{ .r = 178, .g = 105, .b = 214, .a = 255 },
+    .{ .r = 91, .g = 207, .b = 194, .a = 255 },
+};
+
+fn terrainLodColor(lod_index: usize) shared_color.Color {
+    return terrain_lod_palette[@min(lod_index, terrain_lod_palette.len - 1)];
 }
 
 fn lodTransitionFraction(entry: *const Entry) f32 {
@@ -832,6 +840,7 @@ fn rebuildMeshInPlace(allocator: std.mem.Allocator, entry: *Entry, lod_index: us
         .mesh = entry.mesh,
         .texture = entry.texture,
         .base_color = entry.base_color,
+        .lod_index = entry.lod_index,
     };
     entry.mesh = next_mesh;
     entry.texture = next_texture;
@@ -1219,6 +1228,7 @@ fn buildMeshPackage(
 }
 
 fn markClipmapStaleIfNeeded(state: *ProjectEditorState) void {
+    if (!terrainBatchActive(state)) return;
     const camera = cameraTargetVec(state);
     const cell_size = state.world_cell_size_m;
     std.debug.assert(std.math.isFinite(cell_size) and cell_size > 0);
@@ -1238,7 +1248,7 @@ fn markClipmapStaleIfNeeded(state: *ProjectEditorState) void {
 pub fn effectiveDrawDistance(state: *const ProjectEditorState) f32 {
     if (terrainBatchActive(state)) return state.world_cell_size_m * batch_draw_radius_cells;
     const camera_reach = state.camera.distance + state.world_cell_size_m * 2.0;
-    return @max(state.world_draw_distance_m, @max(state.camera.far_clip_m, camera_reach));
+    return @max(state.terrain_detail_distance_m, camera_reach);
 }
 
 const PreviewBudget = struct {
@@ -1246,14 +1256,14 @@ const PreviewBudget = struct {
     max_resident: usize,
 };
 
-fn previewBudget(state: *const ProjectEditorState) PreviewBudget {
+fn previewBudget(state: *const ProjectEditorState, candidate_count: usize) PreviewBudget {
     if (terrainBatchActive(state)) return .{
         .max_loads = batch_max_cells_loaded_per_refresh,
         .max_resident = batch_max_resident_cells,
     };
     return .{
-        .max_loads = max_cells_loaded_per_refresh,
-        .max_resident = max_resident_cells,
+        .max_loads = @max(candidate_count, 1),
+        .max_resident = @max(candidate_count, 1),
     };
 }
 
@@ -1366,11 +1376,12 @@ test "clipmap includes cells inside dynamic radius" {
     try std.testing.expect(!cellInClipmap(.{ .x = 65, .y = 0, .z = 0 }, camera, 64, 4096));
 }
 
-test "editor terrain preview uses gradual lod for distant cells" {
+test "editor terrain preview uses linear lod bands" {
     try std.testing.expectEqual(@as(usize, 0), editableTerrainLodIndex(128, 256, 5));
-    try std.testing.expectEqual(@as(usize, 1), editableTerrainLodIndex(512, 256, 5));
-    try std.testing.expectEqual(@as(usize, 2), editableTerrainLodIndex(768, 256, 5));
-    try std.testing.expectEqual(@as(usize, 3), editableTerrainLodIndex(1024, 256, 5));
+    try std.testing.expectEqual(@as(usize, 1), editableTerrainLodIndex(256, 256, 5));
+    try std.testing.expectEqual(@as(usize, 2), editableTerrainLodIndex(512, 256, 5));
+    try std.testing.expectEqual(@as(usize, 3), editableTerrainLodIndex(768, 256, 5));
+    try std.testing.expectEqual(@as(usize, 4), editableTerrainLodIndex(1024, 256, 5));
     try std.testing.expectEqual(@as(usize, 4), editableTerrainLodIndex(2048, 256, 5));
 }
 
@@ -1411,6 +1422,7 @@ test "lod transition fraction clamps to transition duration" {
             .mesh = mesh,
             .texture = &.{},
             .base_color = .{ .r = 255, .g = 255, .b = 255, .a = 255 },
+            .lod_index = 0,
             .progress_s = lod_transition_duration_s * 0.5,
         },
     };
@@ -1462,6 +1474,26 @@ test "terrain preview marks terrain textures as terrain masks" {
     );
 
     try std.testing.expectEqual(gpu_scene.TextureUsage.terrain_mask, object.texture_usage);
+}
+
+test "terrain lod preview colors are stable and clamp to palette" {
+    var state = ProjectEditorState{
+        .allocator = std.testing.allocator,
+        .io = std.testing.io,
+        .project_path = "",
+        .project_name = "",
+        .objects = .empty,
+    };
+    const base_color: shared_color.Color = .{ .r = 12, .g = 34, .b = 56, .a = 255 };
+
+    try std.testing.expectEqual(terrain_lod_palette[0], terrainLodColor(0));
+    try std.testing.expectEqual(terrain_lod_palette[1], terrainLodColor(1));
+    try std.testing.expectEqual(terrain_lod_palette[terrain_lod_palette.len - 1], terrainLodColor(99));
+    try std.testing.expectEqual(base_color, terrainPreviewColor(&state, base_color, 1));
+    try std.testing.expectEqual(base_color, terrainFarBatchPreviewColor(&state, base_color));
+    state.shading_mode = .lod_debug;
+    try std.testing.expectEqual(terrain_lod_palette[1], terrainPreviewColor(&state, base_color, 1));
+    try std.testing.expectEqual(terrain_lod_palette[terrain_lod_palette.len - 1], terrainFarBatchPreviewColor(&state, base_color));
 }
 
 test "far terrain batch picks dominant splat layer" {

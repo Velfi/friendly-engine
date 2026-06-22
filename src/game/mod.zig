@@ -147,7 +147,7 @@ pub fn tickClientLifecycle(world: *framework.World, startup_lifecycle: bool) !vo
                     .mesh_asset = drawable.mesh_asset,
                     .material_asset = drawable.material_asset,
                     .transform = scene_spawn.objectTransformMatrix(transform),
-                    .double_sided = true,
+                    .double_sided = drawable.doubleSided(),
                 },
             });
             queued_drawables += 1;

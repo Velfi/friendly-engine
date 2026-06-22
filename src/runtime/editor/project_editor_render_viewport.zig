@@ -20,6 +20,7 @@ const project_editor_gizmo_gallery = @import("project_editor_gizmo_gallery.zig")
 const ProjectEditorState = project_editor_state.ProjectEditorState;
 const editor_math = shared.editor_math;
 const grass_runtime = friendly_engine.modules.grass.runtime;
+const grass_camera_exclusion_radius_m: f32 = 1.25;
 
 pub fn draw(
     state: *ProjectEditorState,
@@ -204,7 +205,8 @@ fn drawGpu(
     const filled_shading = filledMeshShadingMode(state);
     var visible_meshes: std.ArrayList(shared.render_visibility.SceneMesh) = .empty;
     defer visible_meshes.deinit(state.allocator);
-    if (filled_shading) |shading| {
+    if (filled_shading != null) {
+        const shading = filled_shading.?;
         for (scene_object_mesh_indices.items) |idx| {
             const obj = &state.objects.items[idx];
             const transform = scene_hierarchy.objectWorldTransform(state.objects.items, idx).m;
@@ -229,13 +231,14 @@ fn drawGpu(
     if (draw_world_context) {
         const identity = editor_math.Mat4.identity().m;
         var mesh_index: usize = terrain_mesh_base;
-        if (filled_shading) |shading| {
+        if (filled_shading != null) {
+            const terrain_shading = filled_shading.?;
             while (mesh_index < terrain_mesh_end) : (mesh_index += 1) {
                 try commands.appendSceneMesh(mesh_index, .{
                     .transform = identity,
-                    .bounds = shared.render_visibility.boundsFromTransform(identity),
-                    .cast_shadows = shading.castsShadows(),
-                    .shading = shading,
+                    .bounds = meshBounds(gpu_objects.items[mesh_index].mesh),
+                    .cast_shadows = terrain_shading.castsShadows(),
+                    .shading = terrain_shading,
                     .double_sided = true,
                     .projection_mode = projection_mode,
                 }, state.camera, 0);
@@ -244,8 +247,8 @@ fn drawGpu(
                 try commands.appendSceneMesh(mesh_index, .{
                     .transform = identity,
                     .bounds = shared.render_visibility.boundsFromTransform(identity),
-                    .cast_shadows = shading.castsShadows(),
-                    .shading = shading,
+                    .cast_shadows = terrain_shading.castsShadows(),
+                    .shading = terrain_shading,
                     .projection_mode = projection_mode,
                 }, state.camera, 0);
             }
@@ -273,15 +276,56 @@ fn drawGpu(
     state.render_command_stats = gpu.lastCommandStats();
 }
 
+fn meshBounds(mesh: *const shared.geometry.Mesh) shared.render_visibility.Bounds {
+    var bounds = shared.render_visibility.Bounds{
+        .min = .{
+            .x = std.math.inf(f32),
+            .y = std.math.inf(f32),
+            .z = std.math.inf(f32),
+        },
+        .max = .{
+            .x = -std.math.inf(f32),
+            .y = -std.math.inf(f32),
+            .z = -std.math.inf(f32),
+        },
+    };
+    for (mesh.vertices) |vertex| {
+        const p = vertex.position;
+        bounds.min.x = @min(bounds.min.x, p.x);
+        bounds.min.y = @min(bounds.min.y, p.y);
+        bounds.min.z = @min(bounds.min.z, p.z);
+        bounds.max.x = @max(bounds.max.x, p.x);
+        bounds.max.y = @max(bounds.max.y, p.y);
+        bounds.max.z = @max(bounds.max.z, p.z);
+    }
+    if (mesh.vertices.len == 0) {
+        bounds.min = .{ .x = 0, .y = 0, .z = 0 };
+        bounds.max = .{ .x = 0, .y = 0, .z = 0 };
+    }
+    return bounds;
+}
+
 fn appendEditorGrassPreview(state: *ProjectEditorState, commands: *shared.render_commands.CommandBuffer) !void {
     const camera_pos = state.camera.eye();
+    var visible_instances: std.ArrayList(shared.render_commands.GrassInstance) = .empty;
+    defer visible_instances.deinit(state.allocator);
+
     for (state.terrain_preview.entries.items) |*entry| {
         const grass = &(entry.grass_preview orelse continue);
         const fade = grass_runtime.batchFadeFactor(.{
             .cull_distance_m = grass.meta.controls.cull_distance_m,
             .fade_distance_m = grass.meta.controls.fade_distance_m,
         }, .{ .x = camera_pos.x, .y = camera_pos.y, .z = camera_pos.z }, grass.center) orelse continue;
-        try commands.appendGrass(grass.instances, &.{}, state.camera, .{
+
+        visible_instances.clearRetainingCapacity();
+        for (grass.instances) |instance| {
+            const sanitized = sanitizedGrassInstance(instance) orelse continue;
+            if (grassInstanceTooCloseToCamera(sanitized, camera_pos)) continue;
+            try visible_instances.append(state.allocator, sanitized);
+        }
+        if (visible_instances.items.len == 0) continue;
+
+        try commands.appendGrass(visible_instances.items, &.{}, state.camera, .{
             .instance_offset = 0,
             .instance_count = 0,
             .influencer_offset = 0,
@@ -297,6 +341,43 @@ fn appendEditorGrassPreview(state: *ProjectEditorState, commands: *shared.render
     }
 }
 
+fn sanitizedGrassInstance(instance: shared.render_commands.GrassInstance) ?shared.render_commands.GrassInstance {
+    if (!finite3(instance.position)) return null;
+    if (!finite3(instance.normal)) return null;
+    if (!std.math.isFinite(instance.height) or !std.math.isFinite(instance.width) or
+        !std.math.isFinite(instance.yaw) or !std.math.isFinite(instance.phase))
+    {
+        return null;
+    }
+    if (instance.height <= 0 or instance.width <= 0) return null;
+    const len_sq = dot3(instance.normal, instance.normal);
+    if (!std.math.isFinite(len_sq) or len_sq <= 0.0001) return null;
+    var result = instance;
+    const inv_len = 1.0 / @sqrt(len_sq);
+    result.normal = .{
+        instance.normal[0] * inv_len,
+        instance.normal[1] * inv_len,
+        instance.normal[2] * inv_len,
+    };
+    return result;
+}
+
+fn grassInstanceTooCloseToCamera(instance: shared.render_commands.GrassInstance, camera_pos: editor_math.Vec3) bool {
+    const dx = instance.position[0] - camera_pos.x;
+    const dy = instance.position[1] - camera_pos.y;
+    const dz = instance.position[2] - camera_pos.z;
+    const radius = @max(grass_camera_exclusion_radius_m, instance.height + instance.width);
+    return dx * dx + dy * dy + dz * dz < radius * radius;
+}
+
+fn finite3(value: [3]f32) bool {
+    return std.math.isFinite(value[0]) and std.math.isFinite(value[1]) and std.math.isFinite(value[2]);
+}
+
+fn dot3(a: [3]f32, b: [3]f32) f32 {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
 fn recordGpuScope(state: *ProjectEditorState, scope: editor_frame_perf.Scope, start_ns: i128) void {
     const elapsed_ns = time.monotonicNs() - start_ns;
     const ms = if (elapsed_ns <= 0) 0 else @as(f64, @floatFromInt(elapsed_ns)) / @as(f64, @floatFromInt(std.time.ns_per_ms));
@@ -308,6 +389,7 @@ fn filledMeshShadingMode(state: *const ProjectEditorState) ?shared.render_comman
         .wireframe => null,
         .solid => .solid,
         .material_preview => .material_preview,
+        .lod_debug => .material_preview,
         .rendered => .rendered,
     };
 }
@@ -375,6 +457,8 @@ test "viewport render modes map to filled mesh shading commands" {
     try std.testing.expectEqual(shared.render_commands.MeshShadingMode.solid, filledMeshShadingMode(&state).?);
     state.shading_mode = .material_preview;
     try std.testing.expectEqual(shared.render_commands.MeshShadingMode.material_preview, filledMeshShadingMode(&state).?);
+    state.shading_mode = .lod_debug;
+    try std.testing.expectEqual(shared.render_commands.MeshShadingMode.material_preview, filledMeshShadingMode(&state).?);
     state.shading_mode = .rendered;
     try std.testing.expectEqual(shared.render_commands.MeshShadingMode.rendered, filledMeshShadingMode(&state).?);
 }
@@ -408,4 +492,29 @@ test "marker objects are excluded from scene mesh rendering" {
     empty_mesh.name = @constCast("empty");
     empty_mesh.mesh = .{ .vertices = &.{}, .indices = &.{} };
     try std.testing.expect(!shouldRenderObjectMesh(&empty_mesh));
+}
+
+test "mesh bounds cover world-space terrain vertices" {
+    const mesh = shared.geometry.Mesh{
+        .vertices = @constCast(&[_]shared.geometry.Vertex{
+            .{
+                .position = .{ .x = 128, .y = -2, .z = 256 },
+                .normal = .{ .x = 0, .y = 1, .z = 0 },
+                .uv = .{ .x = 0, .y = 0 },
+            },
+            .{
+                .position = .{ .x = 384, .y = 12, .z = 512 },
+                .normal = .{ .x = 0, .y = 1, .z = 0 },
+                .uv = .{ .x = 1, .y = 1 },
+            },
+        }),
+        .indices = @constCast(&[_]u32{ 0, 1, 0 }),
+    };
+    const bounds = meshBounds(&mesh);
+    try std.testing.expectEqual(@as(f32, 128), bounds.min.x);
+    try std.testing.expectEqual(@as(f32, -2), bounds.min.y);
+    try std.testing.expectEqual(@as(f32, 256), bounds.min.z);
+    try std.testing.expectEqual(@as(f32, 384), bounds.max.x);
+    try std.testing.expectEqual(@as(f32, 12), bounds.max.y);
+    try std.testing.expectEqual(@as(f32, 512), bounds.max.z);
 }

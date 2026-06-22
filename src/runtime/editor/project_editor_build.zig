@@ -9,7 +9,6 @@ const geometry = shared.geometry;
 const ProjectEditorState = project_editor_state.ProjectEditorState;
 const fps_controller_component = "controller:fps";
 const player_start_tag = "player_start";
-pub const player_spawn_ground_clearance_m: f32 = 0.16;
 const client_exe_env_var = "FRIENDLY_ENGINE_CLIENT_EXE";
 const log = std.log.scoped(.editor_play);
 
@@ -443,6 +442,8 @@ pub fn setPlayerStart(
     errdefer freeComponents(state.allocator, components);
     const gameplay_tag = try state.allocator.dupe(u8, player_start_tag);
     errdefer state.allocator.free(gameplay_tag);
+    const properties = try playerStartProperties(state.allocator);
+    errdefer freeProperties(state.allocator, properties);
 
     try state.objects.append(state.allocator, .{
         .id = state.next_object_id,
@@ -461,6 +462,7 @@ pub fn setPlayerStart(
         .components = components,
         .physics = null,
         .gameplay = .{ .tag = gameplay_tag },
+        .properties = properties,
     });
     state.next_object_id += 1;
     state.selected_object = state.objects.items.len - 1;
@@ -500,6 +502,44 @@ fn replacePlayerStartMetadata(state: *ProjectEditorState, obj: *project_editor_s
     obj.components = try playerStartComponents(state.allocator);
     if (obj.gameplay) |*gameplay| gameplay.deinit(state.allocator);
     obj.gameplay = .{ .tag = try state.allocator.dupe(u8, player_start_tag) };
+    freeProperties(state.allocator, obj.properties);
+    obj.properties = try playerStartProperties(state.allocator);
+}
+
+fn freeProperties(allocator: std.mem.Allocator, properties: []shared.scene_document.Property) void {
+    for (properties) |*prop| prop.deinit(allocator);
+    allocator.free(properties);
+}
+
+fn playerStartProperties(allocator: std.mem.Allocator) ![]shared.scene_document.Property {
+    var properties: std.ArrayList(shared.scene_document.Property) = .empty;
+    errdefer {
+        for (properties.items) |*item| item.deinit(allocator);
+        properties.deinit(allocator);
+    }
+
+    try appendProperty(allocator, &properties, try makeProperty(allocator, "role", player_start_tag));
+    try appendProperty(allocator, &properties, try makeProperty(allocator, "controller_component", fps_controller_component));
+    return properties.toOwnedSlice(allocator);
+}
+
+fn appendProperty(
+    allocator: std.mem.Allocator,
+    properties: *std.ArrayList(shared.scene_document.Property),
+    value: shared.scene_document.Property,
+) !void {
+    errdefer {
+        var owned = value;
+        owned.deinit(allocator);
+    }
+    try properties.append(allocator, value);
+}
+
+fn makeProperty(allocator: std.mem.Allocator, key: []const u8, value: []const u8) !shared.scene_document.Property {
+    return .{
+        .key = try allocator.dupe(u8, key),
+        .value = try allocator.dupe(u8, value),
+    };
 }
 
 fn playerStartComponents(allocator: std.mem.Allocator) ![][]u8 {
@@ -527,6 +567,17 @@ fn playerStartTexture(allocator: std.mem.Allocator) ![]u8 {
     const tex = try allocator.alloc(u8, editor_scene_object.TextureSize * editor_scene_object.TextureSize * 4);
     @memset(tex, 0);
     return tex;
+}
+
+test "player start properties stay gameplay generic" {
+    const properties = try playerStartProperties(std.testing.allocator);
+    defer freeProperties(std.testing.allocator, properties);
+
+    try std.testing.expectEqual(@as(usize, 2), properties.len);
+    try std.testing.expectEqualStrings("role", properties[0].key);
+    try std.testing.expectEqualStrings("player_start", properties[0].value);
+    try std.testing.expectEqualStrings("controller_component", properties[1].key);
+    try std.testing.expectEqualStrings(fps_controller_component, properties[1].value);
 }
 
 test "play scene argv launches configured scene with startup world enabled" {

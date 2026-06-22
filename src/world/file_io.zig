@@ -35,13 +35,21 @@ pub const SyncCellFileIo = struct {
     }
 
     pub fn readCell(self: *const SyncCellFileIo, id: cell.CellId) !cell.WorldCellData {
+        return self.readCellWithAllocator(self.allocator, id);
+    }
+
+    pub fn readCellWithAllocator(
+        self: *const SyncCellFileIo,
+        data_allocator: std.mem.Allocator,
+        id: cell.CellId,
+    ) !cell.WorldCellData {
         var project_dir = try openProjectDir(self.io, self.project_path);
         defer project_dir.close(self.io);
 
-        const baked_path = try fcell.bakedCellPath(self.allocator, self.target, self.world_id, id);
-        defer self.allocator.free(baked_path);
+        const baked_path = try fcell.bakedCellPath(data_allocator, self.target, self.world_id, id);
+        defer data_allocator.free(baked_path);
 
-        const bytes = project_dir.readFileAlloc(self.io, baked_path, self.allocator, .limited(max_cell_bytes)) catch |err| {
+        const bytes = project_dir.readFileAlloc(self.io, baked_path, data_allocator, .limited(max_cell_bytes)) catch |err| {
             switch (err) {
                 error.FileNotFound => log.err(
                     "missing baked world cell: project={s} target={s} world={s} cell={d},{d},{d} path={s}. Run `zig build run-tools -- world-bake --project {s} --world world.kdl --target {s} --cell {d},{d},{d}` or use the editor's Recompile Cells command before Play.",
@@ -76,8 +84,8 @@ pub const SyncCellFileIo = struct {
             }
             return err;
         };
-        defer self.allocator.free(bytes);
-        return fcell.decodeCell(self.allocator, bytes) catch |err| {
+        defer data_allocator.free(bytes);
+        return fcell.decodeCell(data_allocator, bytes) catch |err| {
             log.err(
                 "failed to decode baked world cell: project={s} target={s} world={s} cell={d},{d},{d} path={s} err={s}. Re-run world bake for this cell.",
                 .{
