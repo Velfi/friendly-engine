@@ -10,6 +10,9 @@ build_runner.zig
 friendly_engine_editor
 assets/cache/
 
+# Research papers should be referenced by metadata, not vendored as binaries.
+papers/**/*.pdf
+
 # Local game/project test data
 engine.kdl
 main.kdl
