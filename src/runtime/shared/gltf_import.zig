@@ -179,10 +179,7 @@ fn parseGltfMesh(allocator: std.mem.Allocator, bytes: []const u8, options: Parse
     } else null;
 
     var mesh = geometry.Mesh{ .vertices = vertices, .indices = indices, .skin = skin };
-    if (has_texcoords) {
-        if (!mesh.isSkinned()) _ = try uv_atlas.validateRenderableUvSet(&mesh);
-        return mesh;
-    }
+    if (has_texcoords) return mesh;
     if (mesh.isSkinned()) return mesh;
 
     const generated = uv_atlas.generatePaintAtlas(allocator, &mesh, options.atlas_options) catch |err| {

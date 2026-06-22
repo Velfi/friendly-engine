@@ -180,13 +180,10 @@ fn parseLatestTile(allocator: std.mem.Allocator, bytes: []const u8, cell: world.
     errdefer if (latest) |*tile| tile.deinit(allocator);
 
     while (offset < bytes.len) {
-        const parsed = try readChunkRecord(allocator, bytes, &offset);
-        if (parsed.id().eql(cell)) {
+        const parsed = try readChunkRecordIfWanted(allocator, bytes, &offset, &.{cell});
+        if (parsed) |tile_value| {
             if (latest) |*tile| tile.deinit(allocator);
-            latest = parsed;
-        } else {
-            var discard = parsed;
-            discard.deinit(allocator);
+            latest = tile_value;
         }
     }
 

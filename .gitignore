@@ -3,6 +3,7 @@
 zig-cache/
 zig-out/
 zig-pkg/
+.agent-tools/
 build_runner.zig
 
 # Local editor/runtime artifacts

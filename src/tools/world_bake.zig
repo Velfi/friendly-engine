@@ -21,6 +21,7 @@ pub const BakeWorldOptions = struct {
     cells: []const world_mod.cell.CellId = &.{},
     progress_context: ?*anyopaque = null,
     progress: ?*const fn (?*anyopaque, BakeProgress) void = null,
+    profile: bool = false,
 };
 
 pub const BakeProgressStage = enum {
@@ -78,6 +79,14 @@ pub fn bakeWorldWithOptions(
     emitProgress(options, .{ .stage = .planning_layers });
     const layer_plans = try buildLayerPlans(allocator, &compile_ctx, services.worldCompilerLayers());
     defer freeLayerPlans(allocator, layer_plans);
+    var profile = BakeProfile{};
+    defer profile.deinit(allocator);
+    if (options.profile) {
+        profile.layers = try allocator.alloc(LayerProfile, layer_plans.len);
+        for (layer_plans, 0..) |plan, index| {
+            profile.layers[index] = .{ .name = plan.layer.name };
+        }
+    }
 
     var project_dir = try openProjectDir(io, project_path);
     defer project_dir.close(io);
@@ -126,6 +135,7 @@ pub fn bakeWorldWithOptions(
             inputs.deinit(allocator);
         }
 
+        const scene_start = friendly_engine.core.time.monotonicNs();
         const scene_bytes = try project_dir.readFileAlloc(io, manifest_cell.authoring_path, allocator, .limited(16 * 1024 * 1024));
         defer allocator.free(scene_bytes);
         var document = try scene_kdl.parseSceneDocument(allocator, scene_bytes);
@@ -138,6 +148,10 @@ pub fn bakeWorldWithOptions(
         };
         var loaded_scene = try scene_resolve.resolveDocument(allocator, document, resolver);
         defer loaded_scene.deinit(allocator);
+        if (options.profile) {
+            profile.scene_ns += elapsedNs(scene_start);
+            profile.scene_count += 1;
+        }
 
         for (loaded_scene.objects) |object| {
             if (object.object_kind == .marker) continue;
@@ -178,6 +192,7 @@ pub fn bakeWorldWithOptions(
         const neighbors = try collectNeighborLinks(allocator, &loaded_manifest, manifest_cell.id);
         defer allocator.free(neighbors);
 
+        const base_compile_start = friendly_engine.core.time.monotonicNs();
         var compiled = try world_mod.compiler.compileSceneLayerCell(
             allocator,
             manifest_cell.id,
@@ -186,8 +201,12 @@ pub fn bakeWorldWithOptions(
             neighbors,
         );
         defer compiled.deinit(allocator);
+        if (options.profile) {
+            profile.base_compile_ns += elapsedNs(base_compile_start);
+            profile.base_compile_count += 1;
+        }
 
-        for (layer_plans) |plan| {
+        for (layer_plans, 0..) |plan, layer_index| {
             if (!containsCell(plan.affected_cells, manifest_cell.id)) continue;
             emitProgress(options, .{
                 .stage = .compiling_layer,
@@ -197,19 +216,34 @@ pub fn bakeWorldWithOptions(
                 .layer_name = plan.layer.name,
                 .scene_path = manifest_cell.authoring_path,
             });
+            const layer_start = friendly_engine.core.time.monotonicNs();
             var output = try plan.layer.compile_cell(plan.layer.ctx, &compile_ctx, manifest_cell.id, allocator);
             defer output.deinit(allocator);
             try world_mod.compiler.mergeLayerOutput(allocator, &compiled, &output);
+            if (options.profile) {
+                profile.layers[layer_index].ns += elapsedNs(layer_start);
+                profile.layers[layer_index].cells += 1;
+            }
         }
 
         try appendSceneDependencies(allocator, &compiled, manifest_cell.authoring_path, document);
         try prefetch_entries.append(allocator, try world_prefetch.copyCellEntry(allocator, manifest_cell.id, compiled.dependencies));
+        const write_start = friendly_engine.core.time.monotonicNs();
         try cell_file_io.writeCell(compiled);
+        if (options.profile) {
+            profile.write_ns += elapsedNs(write_start);
+            profile.write_count += 1;
+        }
         written_cells += 1;
     }
 
     emitProgress(options, .{ .stage = .writing_prefetch, .current = written_cells, .total = total_cells });
+    const prefetch_start = friendly_engine.core.time.monotonicNs();
     try world_prefetch.write(allocator, io, project_dir, target, loaded_manifest.world_id, prefetch_entries.items);
+    if (options.profile) {
+        profile.prefetch_ns += elapsedNs(prefetch_start);
+        printProfile(profile);
+    }
     return .{
         .world_id = try allocator.dupe(u8, loaded_manifest.world_id),
         .written_cells = written_cells,
@@ -272,6 +306,51 @@ const LayerPlan = struct {
     affected_cells: []world_mod.cell.CellId,
 };
 
+const BakeProfile = struct {
+    scene_ns: u64 = 0,
+    scene_count: usize = 0,
+    base_compile_ns: u64 = 0,
+    base_compile_count: usize = 0,
+    write_ns: u64 = 0,
+    write_count: usize = 0,
+    prefetch_ns: u64 = 0,
+    layers: []LayerProfile = &.{},
+
+    fn deinit(self: *BakeProfile, allocator: std.mem.Allocator) void {
+        if (self.layers.len > 0) allocator.free(self.layers);
+        self.* = .{};
+    }
+};
+
+const LayerProfile = struct {
+    name: []const u8,
+    ns: u64 = 0,
+    cells: usize = 0,
+};
+
+fn elapsedNs(start_ns: i128) u64 {
+    const delta = friendly_engine.core.time.monotonicNs() - start_ns;
+    if (delta <= 0) return 0;
+    return @intCast(delta);
+}
+
+fn printProfile(profile: BakeProfile) void {
+    std.debug.print("\nworld-bake profile:\n", .{});
+    printProfileLine("scene_load_resolve", profile.scene_ns, profile.scene_count);
+    printProfileLine("base_scene_compile", profile.base_compile_ns, profile.base_compile_count);
+    for (profile.layers) |layer| {
+        printProfileLine(layer.name, layer.ns, layer.cells);
+    }
+    printProfileLine("write_cell", profile.write_ns, profile.write_count);
+    printProfileLine("write_prefetch", profile.prefetch_ns, 1);
+}
+
+fn printProfileLine(name: []const u8, ns: u64, count: usize) void {
+    const total_ms = @as(f64, @floatFromInt(ns)) / 1_000_000.0;
+    const avg_ms = if (count == 0) 0 else total_ms / @as(f64, @floatFromInt(count));
+    std.debug.print("  {s}: total_ms={d:.3} count={d} avg_ms={d:.3}\n", .{ name, total_ms, count, avg_ms });
+}
+
 fn buildLayerPlans(
     allocator: std.mem.Allocator,
     compile_ctx: *const world_mod.compiler.layer.CompileContext,
@@ -320,10 +399,81 @@ fn countSelectedCells(cells: []const world_mod.manifest.ManifestCell, selected: 
     return count;
 }
 
+const CliProgress = struct {
+    start_ns: i128,
+    last_print_ns: i128,
+
+    fn init() CliProgress {
+        const now = friendly_engine.core.time.monotonicNs();
+        return .{
+            .start_ns = now,
+            .last_print_ns = 0,
+        };
+    }
+
+    fn shouldPrintCell(self: *CliProgress, current: usize, total: usize) bool {
+        if (current <= 3 or current == total) return true;
+        if (current % 100 == 0) return true;
+
+        const now = friendly_engine.core.time.monotonicNs();
+        if (self.last_print_ns == 0 or now - self.last_print_ns >= std.time.ns_per_s) return true;
+        return false;
+    }
+
+    fn markPrinted(self: *CliProgress) void {
+        self.last_print_ns = friendly_engine.core.time.monotonicNs();
+    }
+};
+
+fn printCliProgress(ctx: ?*anyopaque, progress: BakeProgress) void {
+    const cli: *CliProgress = @ptrCast(@alignCast(ctx orelse return));
+    switch (progress.stage) {
+        .planning_layers => {
+            std.debug.print("world-bake: planning compiler layers\n", .{});
+            cli.markPrinted();
+        },
+        .baking_cell => {
+            const cell = progress.cell orelse return;
+            if (!cli.shouldPrintCell(progress.current, progress.total)) return;
+            const now = friendly_engine.core.time.monotonicNs();
+            const elapsed_s = secondsSince(cli.start_ns, now);
+            const percent = if (progress.total == 0) 100.0 else @as(f64, @floatFromInt(progress.current)) * 100.0 / @as(f64, @floatFromInt(progress.total));
+            const rate = if (elapsed_s <= 0.0) 0.0 else @as(f64, @floatFromInt(progress.current)) / elapsed_s;
+            const remaining = progress.total - @min(progress.current, progress.total);
+            const eta_s = if (rate <= 0.0) 0.0 else @as(f64, @floatFromInt(remaining)) / rate;
+            std.debug.print(
+                "world-bake: cell {d}/{d} ({d:.1}%) elapsed={d:.1}s eta={d:.1}s cell={d},{d},{d} scene={s}\n",
+                .{ progress.current, progress.total, percent, elapsed_s, eta_s, cell.x, cell.y, cell.z, progress.scene_path },
+            );
+            cli.markPrinted();
+        },
+        .compiling_layer => {
+            const cell = progress.cell orelse return;
+            if (progress.current > 3 and progress.current % 100 != 0) return;
+            std.debug.print(
+                "world-bake:   layer {s} cell={d},{d},{d}\n",
+                .{ progress.layer_name, cell.x, cell.y, cell.z },
+            );
+        },
+        .writing_prefetch => {
+            std.debug.print("world-bake: writing prefetch for {d} cells\n", .{progress.current});
+            cli.markPrinted();
+        },
+    }
+}
+
+fn secondsSince(start_ns: i128, now_ns: i128) f64 {
+    const delta = now_ns - start_ns;
+    if (delta <= 0) return 0.0;
+    return @as(f64, @floatFromInt(delta)) / @as(f64, @floatFromInt(std.time.ns_per_s));
+}
+
 pub fn runCli(allocator: std.mem.Allocator, io: std.Io, args: []const []const u8) !void {
     var project_path: []const u8 = ".";
     var manifest_path: []const u8 = "world.kdl";
     var target: []const u8 = "client-debug";
+    var profile = false;
+    var quiet = false;
     var cells = std.ArrayList(world_mod.cell.CellId).empty;
     defer cells.deinit(allocator);
 
@@ -331,6 +481,14 @@ pub fn runCli(allocator: std.mem.Allocator, io: std.Io, args: []const []const u8
     while (i < args.len) {
         const flag = args[i];
         i += 1;
+        if (std.mem.eql(u8, flag, "--profile")) {
+            profile = true;
+            continue;
+        }
+        if (std.mem.eql(u8, flag, "--quiet")) {
+            quiet = true;
+            continue;
+        }
         if (i >= args.len) return error.InvalidArguments;
         const value = args[i];
         i += 1;
@@ -354,8 +512,12 @@ pub fn runCli(allocator: std.mem.Allocator, io: std.Io, args: []const []const u8
         return error.InvalidArguments;
     }
 
+    var progress_ctx = CliProgress.init();
     var summary = try bakeWorldWithOptions(allocator, io, project_path, manifest_path, target, .{
         .cells = cells.items,
+        .progress_context = if (quiet) null else &progress_ctx,
+        .progress = if (quiet) null else printCliProgress,
+        .profile = profile,
     });
     defer summary.deinit(allocator);
     std.debug.print(

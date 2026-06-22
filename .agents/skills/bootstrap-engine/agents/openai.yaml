@@ -1,0 +1,4 @@
+interface:
+  display_name: "Bootstrap Engine"
+  short_description: "Install Zig, vendor deps, and run Friendly Engine."
+  default_prompt: "Use $bootstrap-engine to install Zig, refresh vendors, build assets, verify the checkout, and launch the editor."

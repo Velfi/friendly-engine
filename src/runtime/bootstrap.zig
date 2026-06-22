@@ -70,6 +70,7 @@ pub fn bootWorld(
         config,
         .cwd,
         "",
+        &.{},
         project_config_path,
     );
 }
@@ -87,13 +88,38 @@ pub fn bootWorldInProject(
         config,
         .project,
         project_path,
+        &.{},
         project_config_path,
+    );
+}
+
+pub fn bootEngineOnly(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    config: @import("../root.zig").EngineConfig,
+) !BootResult {
+    const engine_modules = [_][]const u8{
+        modules.ecs.module_name,
+        modules.keyboard_mouse_controller.module_name,
+        modules.core_ui.module_name,
+        modules.luajit.module_name,
+        modules.persistence.module_name,
+    };
+    return bootWorldWithConfigLoader(
+        allocator,
+        io,
+        config,
+        .provided,
+        "",
+        &engine_modules,
+        "",
     );
 }
 
 const ConfigLoadMode = enum {
     cwd,
     project,
+    provided,
 };
 
 fn bootWorldWithConfigLoader(
@@ -102,6 +128,7 @@ fn bootWorldWithConfigLoader(
     config: @import("../root.zig").EngineConfig,
     config_load_mode: ConfigLoadMode,
     project_path: []const u8,
+    inline_modules: []const []const u8,
     project_config_path: []const u8,
 ) !BootResult {
     const engine = @import("../root.zig");
@@ -120,6 +147,7 @@ fn bootWorldWithConfigLoader(
             project_path,
             project_config_path,
         ),
+        .provided => try modules.defaultProjectConfigWithModules(allocator, inline_modules),
     };
     errdefer project_config.deinit();
 
@@ -134,35 +162,42 @@ fn bootWorldWithConfigLoader(
     const custom_gem_project_path = switch (config_load_mode) {
         .cwd => ".",
         .project => project_path,
+        .provided => null,
     };
-    try modules.addProjectCustomGems(&module_graph, allocator, io, custom_gem_project_path);
-
-    var enabled_modules = std.ArrayList([]const u8).empty;
-    defer enabled_modules.deinit(allocator);
-    for (project_config.enabledModules()) |module_name| {
-        if (!config.enable_physics and std.mem.eql(u8, module_name, modules.physics3d.module_name)) {
-            continue;
-        }
-        if (!config.enable_audio and std.mem.eql(u8, module_name, modules.audio.module_name)) {
-            continue;
-        }
-        try enabled_modules.append(allocator, module_name);
+    if (custom_gem_project_path) |custom_path| {
+        try modules.addProjectCustomGems(&module_graph, allocator, io, custom_path);
     }
-    module_graph.resolveEnabled(enabled_modules.items) catch |err| {
-        switch (err) {
-            error.UnknownModule => if (module_graph.lastUnknownModule()) |module_name| {
-                std.log.err("unknown enabled module: {s}", .{module_name});
-            },
-            error.MissingModuleDependency => if (module_graph.lastMissingDependency()) |missing| {
-                std.log.err(
-                    "module {s} depends on unknown module: {s}",
-                    .{ missing.module_name, missing.dependency_name },
-                );
-            },
-            else => {},
+
+    if (config_load_mode == .provided) {
+        try module_graph.resolveAll();
+    } else {
+        var enabled_modules = std.ArrayList([]const u8).empty;
+        defer enabled_modules.deinit(allocator);
+        for (project_config.enabledModules()) |module_name| {
+            if (!config.enable_physics and std.mem.eql(u8, module_name, modules.physics3d.module_name)) {
+                continue;
+            }
+            if (!config.enable_audio and std.mem.eql(u8, module_name, modules.audio.module_name)) {
+                continue;
+            }
+            try enabled_modules.append(allocator, module_name);
         }
-        return err;
-    };
+        module_graph.resolveEnabled(enabled_modules.items) catch |err| {
+            switch (err) {
+                error.UnknownModule => if (module_graph.lastUnknownModule()) |module_name| {
+                    std.log.err("unknown enabled module: {s}", .{module_name});
+                },
+                error.MissingModuleDependency => if (module_graph.lastMissingDependency()) |missing| {
+                    std.log.err(
+                        "module {s} depends on unknown module: {s}",
+                        .{ missing.module_name, missing.dependency_name },
+                    );
+                },
+                else => {},
+            }
+            return err;
+        };
+    }
 
     var services = modules.ServiceRegistry.init(allocator);
     errdefer services.deinit();
@@ -171,8 +206,10 @@ fn bootWorldWithConfigLoader(
     try services.applyToWorld(&world);
     // Start in lifetime-breadth order: engine (process) then project then editor.
     try module_graph.startScope(.engine, &world);
-    try module_graph.startScope(.project, &world);
-    try module_graph.startScope(.editor, &world);
+    if (config_load_mode != .provided) {
+        try module_graph.startScope(.project, &world);
+        try module_graph.startScope(.editor, &world);
+    }
 
     return .{
         .world = world,
@@ -188,6 +225,16 @@ test "bootstrap loads default project config and starts modules" {
 
     try std.testing.expect(boot.project_config.enabledModules().len >= 1);
     try std.testing.expect(boot.module_graph.resolvedCount() >= 1);
+}
+
+test "engine-only bootstrap starts project manager without project modules" {
+    var boot = try bootEngineOnly(std.testing.allocator, std.testing.io, .{ .runtime = .editor });
+    defer boot.deinit();
+
+    try std.testing.expect(boot.module_graph.isStarted("gem.ecs"));
+    try std.testing.expect(boot.module_graph.isStarted("gem.core_ui"));
+    try std.testing.expect(!boot.module_graph.isStarted("gem.terrain"));
+    try std.testing.expect(!boot.module_graph.isStarted("gem.editor_world"));
 }
 
 test "closeProject and openProject cycle project scope while engine persists" {

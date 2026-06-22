@@ -1,7 +1,7 @@
 const std = @import("std");
 const friendly_engine = @import("friendly_engine");
 const desktop_backend = @import("desktop_backend.zig");
-const lua_controller_backend = @import("lua_controller_backend.zig");
+const lua_backend_mod = @import("lua_backend");
 const scene_view = @import("scene_view.zig");
 const scene_bootstrap = @import("scene_bootstrap.zig");
 const client_atmosphere = @import("client_atmosphere.zig");
@@ -102,7 +102,7 @@ fn run(init: std.process.Init) !void {
     defer boot.deinit();
     const world = &boot.world;
     friendly_engine.game.setActiveWorld(world);
-    var lua_backend = try lua_controller_backend.LuaControllerBackend.init(std.heap.page_allocator);
+    var lua_backend = try lua_backend_mod.LuaBackend.init(std.heap.page_allocator);
     try friendly_engine.modules.luajit.runtime().attachBackend(lua_backend.backend());
     const project_config = boot.project_config;
     const startup_scene = options.startup_scene_override orelse project_config.startupScene();

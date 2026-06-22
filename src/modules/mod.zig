@@ -675,6 +675,7 @@ pub fn defaultProjectConfig(allocator: std.mem.Allocator) !OwnedProjectConfig {
 }
 
 pub const parseProjectConfigBytes = project_config_mod.parseProjectConfigBytes;
+pub const defaultProjectConfigWithModules = project_config_mod.defaultProjectConfig;
 pub const formatProjectConfig = project_config_mod.formatProjectConfig;
 pub const loadProjectConfig = project_config_mod.loadProjectConfig;
 pub const loadProjectConfigInProject = project_config_mod.loadProjectConfigInProject;

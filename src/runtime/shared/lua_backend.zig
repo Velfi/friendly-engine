@@ -11,17 +11,18 @@ const c = @cImport({
 const gems_global = "__friendly_engine_gems";
 const states_global = "__friendly_engine_controller_states";
 
-pub const LuaControllerBackend = struct {
+pub const LuaBackend = struct {
     allocator: std.mem.Allocator,
     state: *c.lua_State,
 
-    pub fn init(allocator: std.mem.Allocator) !*LuaControllerBackend {
+    pub fn init(allocator: std.mem.Allocator) !*LuaBackend {
         const L = c.luaL_newstate() orelse return error.LuaJitStateCreateFailed;
         c.luaL_openlibs(L);
         try ensureGlobalTable(L, gems_global);
         try ensureGlobalTable(L, states_global);
+        try installFeApi(L);
 
-        const created = try allocator.create(LuaControllerBackend);
+        const created = try allocator.create(LuaBackend);
         created.* = .{
             .allocator = allocator,
             .state = L,
@@ -29,27 +30,33 @@ pub const LuaControllerBackend = struct {
         return created;
     }
 
-    pub fn backend(self: *LuaControllerBackend) luajit.Backend {
+    pub fn backend(self: *LuaBackend) luajit.Backend {
         return .{
             .context = self,
             .vtable = &vtable,
         };
     }
 
-    fn deinit(self: *LuaControllerBackend) void {
+    fn deinit(self: *LuaBackend) void {
         c.lua_close(self.state);
         const allocator = self.allocator;
         allocator.destroy(self);
     }
 
-    fn loadGem(self: *LuaControllerBackend, name: []const u8, source: []const u8) !void {
+    fn loadGem(self: *LuaBackend, name: []const u8, source: []const u8) !void {
         const name_z = try self.allocator.dupeZ(u8, name);
         defer self.allocator.free(name_z);
         const top = c.lua_gettop(self.state);
         defer c.lua_settop(self.state, top);
 
-        if (c.luaL_loadbuffer(self.state, source.ptr, source.len, name_z.ptr) != 0) return error.LuaGemLoadFailed;
-        if (c.lua_pcall(self.state, 0, 1, 0) != 0) return error.LuaGemRunFailed;
+        if (c.luaL_loadbuffer(self.state, source.ptr, source.len, name_z.ptr) != 0) {
+            logLuaError(self.state, "Lua gem load failed");
+            return error.LuaGemLoadFailed;
+        }
+        if (c.lua_pcall(self.state, 0, 1, 0) != 0) {
+            logLuaError(self.state, "Lua gem run failed");
+            return error.LuaGemRunFailed;
+        }
         if (c.lua_type(self.state, -1) != c.LUA_TTABLE) return error.LuaGemMustReturnTable;
 
         getGlobalTable(self.state, gems_global);
@@ -57,14 +64,50 @@ pub const LuaControllerBackend = struct {
         c.lua_setfield(self.state, -2, name_z.ptr);
     }
 
-    fn eval(self: *LuaControllerBackend, source: []const u8) !void {
+    fn eval(self: *LuaBackend, source: []const u8) !void {
         const top = c.lua_gettop(self.state);
         defer c.lua_settop(self.state, top);
-        if (c.luaL_loadbuffer(self.state, source.ptr, source.len, "luajit.eval") != 0) return error.LuaEvalLoadFailed;
-        if (c.lua_pcall(self.state, 0, 0, 0) != 0) return error.LuaEvalRunFailed;
+        if (c.luaL_loadbuffer(self.state, source.ptr, source.len, "luajit.eval") != 0) {
+            logLuaError(self.state, "Lua eval load failed");
+            return error.LuaEvalLoadFailed;
+        }
+        if (c.lua_pcall(self.state, 0, 0, 0) != 0) {
+            logLuaError(self.state, "Lua eval run failed");
+            return error.LuaEvalRunFailed;
+        }
     }
 
-    fn controllerActions(self: *LuaControllerBackend, gem_name: []const u8, allocator: std.mem.Allocator) !luajit.ScriptedControllerActions {
+    fn callGem(
+        self: *LuaBackend,
+        gem_name: []const u8,
+        function_name: []const u8,
+        payload: []const u8,
+        allocator: std.mem.Allocator,
+    ) ![]u8 {
+        const gem_name_z = try self.allocator.dupeZ(u8, gem_name);
+        defer self.allocator.free(gem_name_z);
+        const function_name_z = try self.allocator.dupeZ(u8, function_name);
+        defer self.allocator.free(function_name_z);
+        const top = c.lua_gettop(self.state);
+        defer c.lua_settop(self.state, top);
+
+        try pushGemTable(self.state, gem_name_z.ptr);
+        const gem_index = c.lua_gettop(self.state);
+        c.lua_getfield(self.state, gem_index, function_name_z.ptr);
+        if (c.lua_type(self.state, -1) != c.LUA_TFUNCTION) return error.MissingLuaGemFunction;
+        c.lua_pushlstring(self.state, payload.ptr, payload.len);
+        if (c.lua_pcall(self.state, 1, 1, 0) != 0) {
+            logLuaError(self.state, "Lua gem call failed");
+            return error.LuaGemCallFailed;
+        }
+
+        var out = std.ArrayList(u8).empty;
+        errdefer out.deinit(allocator);
+        try appendLuaJson(self.state, allocator, &out, -1);
+        return out.toOwnedSlice(allocator);
+    }
+
+    fn controllerActions(self: *LuaBackend, gem_name: []const u8, allocator: std.mem.Allocator) !luajit.ScriptedControllerActions {
         const gem_name_z = try self.allocator.dupeZ(u8, gem_name);
         defer self.allocator.free(gem_name_z);
         const top = c.lua_gettop(self.state);
@@ -92,7 +135,7 @@ pub const LuaControllerBackend = struct {
     }
 
     fn updateController(
-        self: *LuaControllerBackend,
+        self: *LuaBackend,
         gem_name: []const u8,
         input: luajit.ScriptedControllerInput,
         allocator: std.mem.Allocator,
@@ -111,7 +154,10 @@ pub const LuaControllerBackend = struct {
         pushInput(self.state, input);
         try pushDefaultConfig(self.state, gem_index);
 
-        if (c.lua_pcall(self.state, 4, 1, 0) != 0) return error.LuaControllerUpdateFailed;
+        if (c.lua_pcall(self.state, 4, 1, 0) != 0) {
+            logLuaError(self.state, "Lua controller update failed");
+            return error.LuaControllerUpdateFailed;
+        }
         if (c.lua_type(self.state, -1) != c.LUA_TTABLE) return error.InvalidLuaControllerResult;
         return readResult(self.state, allocator);
     }
@@ -121,27 +167,33 @@ const vtable = luajit.BackendVTable{
     .deinit = deinitThunk,
     .load_gem = loadGemThunk,
     .eval = evalThunk,
+    .call_gem = callGemThunk,
     .controller_actions = controllerActionsThunk,
     .update_controller = updateControllerThunk,
 };
 
 fn deinitThunk(context: *anyopaque) void {
-    const self: *LuaControllerBackend = @ptrCast(@alignCast(context));
+    const self: *LuaBackend = @ptrCast(@alignCast(context));
     self.deinit();
 }
 
 fn loadGemThunk(context: *anyopaque, name: []const u8, source: []const u8) !void {
-    const self: *LuaControllerBackend = @ptrCast(@alignCast(context));
+    const self: *LuaBackend = @ptrCast(@alignCast(context));
     try self.loadGem(name, source);
 }
 
 fn evalThunk(context: *anyopaque, source: []const u8) !void {
-    const self: *LuaControllerBackend = @ptrCast(@alignCast(context));
+    const self: *LuaBackend = @ptrCast(@alignCast(context));
     try self.eval(source);
 }
 
+fn callGemThunk(context: *anyopaque, gem_name: []const u8, function_name: []const u8, payload: []const u8, allocator: std.mem.Allocator) ![]u8 {
+    const self: *LuaBackend = @ptrCast(@alignCast(context));
+    return self.callGem(gem_name, function_name, payload, allocator);
+}
+
 fn controllerActionsThunk(context: *anyopaque, gem_name: []const u8, allocator: std.mem.Allocator) !luajit.ScriptedControllerActions {
-    const self: *LuaControllerBackend = @ptrCast(@alignCast(context));
+    const self: *LuaBackend = @ptrCast(@alignCast(context));
     return self.controllerActions(gem_name, allocator);
 }
 
@@ -151,7 +203,7 @@ fn updateControllerThunk(
     input: luajit.ScriptedControllerInput,
     allocator: std.mem.Allocator,
 ) !luajit.ScriptedControllerResult {
-    const self: *LuaControllerBackend = @ptrCast(@alignCast(context));
+    const self: *LuaBackend = @ptrCast(@alignCast(context));
     return self.updateController(gem_name, input, allocator);
 }
 
@@ -164,6 +216,59 @@ fn ensureGlobalTable(L: *c.lua_State, name: [:0]const u8) !void {
     c.lua_settop(L, -2);
     c.lua_createtable(L, 0, 8);
     c.lua_setfield(L, c.LUA_GLOBALSINDEX, name.ptr);
+}
+
+fn installFeApi(L: *c.lua_State) !void {
+    const source =
+        \\fe = fe or {}
+        \\fe.time = fe.time or {}
+        \\fe.log = fe.log or {}
+        \\fe.assets = fe.assets or {}
+        \\fe.entities = fe.entities or {}
+        \\fe.input = fe.input or {}
+        \\fe.ui = fe.ui or {}
+        \\fe.audio = fe.audio or {}
+        \\fe.persistence = fe.persistence or {}
+        \\fe.scene = fe.scene or {}
+        \\local function missing(name)
+        \\  return function()
+        \\    error("Friendly Engine Lua API not implemented: " .. name, 2)
+        \\  end
+        \\end
+        \\fe.time.now = fe.time.now or function() return os.clock() end
+        \\fe.log.info = fe.log.info or function(message) print("[fe][info] " .. tostring(message)) end
+        \\fe.log.warn = fe.log.warn or function(message) print("[fe][warn] " .. tostring(message)) end
+        \\fe.log.error = fe.log.error or function(message) print("[fe][error] " .. tostring(message)) end
+        \\fe.assets.exists = fe.assets.exists or missing("assets.exists")
+        \\fe.assets.resolve = fe.assets.resolve or missing("assets.resolve")
+        \\fe.entities.spawn = fe.entities.spawn or missing("entities.spawn")
+        \\fe.entities.destroy = fe.entities.destroy or missing("entities.destroy")
+        \\fe.entities.set_transform = fe.entities.set_transform or missing("entities.set_transform")
+        \\fe.entities.set_material = fe.entities.set_material or missing("entities.set_material")
+        \\fe.input.snapshot = fe.input.snapshot or missing("input.snapshot")
+        \\fe.input.ray_pick = fe.input.ray_pick or missing("input.ray_pick")
+        \\fe.ui.begin = fe.ui.begin or missing("ui.begin")
+        \\fe.ui.text = fe.ui.text or missing("ui.text")
+        \\fe.ui.button = fe.ui.button or missing("ui.button")
+        \\fe.ui.panel = fe.ui.panel or missing("ui.panel")
+        \\fe.ui.finish = fe.ui.finish or missing("ui.finish")
+        \\fe.audio.play = fe.audio.play or missing("audio.play")
+        \\fe.persistence.save = fe.persistence.save or missing("persistence.save")
+        \\fe.persistence.load = fe.persistence.load or missing("persistence.load")
+        \\fe.scene.switch = fe.scene.switch or missing("scene.switch")
+    ;
+    if (c.luaL_loadbuffer(L, source.ptr, source.len, "fe.api") != 0) return error.LuaFeApiLoadFailed;
+    if (c.lua_pcall(L, 0, 0, 0) != 0) return error.LuaFeApiInstallFailed;
+}
+
+fn logLuaError(L: *c.lua_State, context: []const u8) void {
+    var len: usize = 0;
+    const ptr = c.lua_tolstring(L, -1, &len);
+    if (ptr) |message| {
+        std.debug.print("{s}: {s}\n", .{ context, message[0..len] });
+    } else {
+        std.debug.print("{s}: <non-string Lua error>\n", .{context});
+    }
 }
 
 fn getGlobalTable(L: *c.lua_State, name: [:0]const u8) void {
@@ -286,4 +391,85 @@ fn readBoolField(L: *c.lua_State, field: [:0]const u8) bool {
     c.lua_getfield(L, -1, field.ptr);
     defer c.lua_settop(L, -2);
     return c.lua_toboolean(L, -1) != 0;
+}
+
+fn appendLuaJson(L: *c.lua_State, allocator: std.mem.Allocator, out: *std.ArrayList(u8), index: c_int) anyerror!void {
+    const abs_index = absoluteLuaIndex(L, index);
+    switch (c.lua_type(L, abs_index)) {
+        c.LUA_TNIL => try out.appendSlice(allocator, "null"),
+        c.LUA_TBOOLEAN => try out.appendSlice(allocator, if (c.lua_toboolean(L, abs_index) != 0) "true" else "false"),
+        c.LUA_TNUMBER => {
+            const number_text = try std.fmt.allocPrint(allocator, "{d}", .{c.lua_tonumber(L, abs_index)});
+            defer allocator.free(number_text);
+            try out.appendSlice(allocator, number_text);
+        },
+        c.LUA_TSTRING => {
+            var len: usize = 0;
+            const ptr = c.lua_tolstring(L, abs_index, &len) orelse return error.InvalidLuaStringField;
+            try appendJsonString(allocator, out, ptr[0..len]);
+        },
+        c.LUA_TTABLE => try appendLuaTableJson(L, allocator, out, abs_index),
+        else => try appendJsonString(allocator, out, "<unsupported lua value>"),
+    }
+}
+
+fn appendLuaTableJson(L: *c.lua_State, allocator: std.mem.Allocator, out: *std.ArrayList(u8), index: c_int) anyerror!void {
+    const abs_index = absoluteLuaIndex(L, index);
+    const array_len = c.lua_objlen(L, abs_index);
+    if (array_len > 0) {
+        try out.append(allocator, '[');
+        var i: usize = 1;
+        while (i <= array_len) : (i += 1) {
+            if (i > 1) try out.append(allocator, ',');
+            c.lua_rawgeti(L, abs_index, @intCast(i));
+            try appendLuaJson(L, allocator, out, -1);
+            c.lua_pop(L, 1);
+        }
+        try out.append(allocator, ']');
+        return;
+    }
+
+    try out.append(allocator, '{');
+    var first = true;
+    c.lua_pushnil(L);
+    while (c.lua_next(L, abs_index) != 0) {
+        if (!first) try out.append(allocator, ',');
+        first = false;
+
+        if (c.lua_type(L, -2) == c.LUA_TSTRING) {
+            var len: usize = 0;
+            const key_ptr = c.lua_tolstring(L, -2, &len) orelse return error.InvalidLuaStringField;
+            try appendJsonString(allocator, out, key_ptr[0..len]);
+        } else if (c.lua_type(L, -2) == c.LUA_TNUMBER) {
+            const key_text = try std.fmt.allocPrint(allocator, "\"{d}\"", .{c.lua_tonumber(L, -2)});
+            defer allocator.free(key_text);
+            try out.appendSlice(allocator, key_text);
+        } else {
+            try appendJsonString(allocator, out, "unsupported_key");
+        }
+        try out.append(allocator, ':');
+        try appendLuaJson(L, allocator, out, -1);
+        c.lua_pop(L, 1);
+    }
+    try out.append(allocator, '}');
+}
+
+fn absoluteLuaIndex(L: *c.lua_State, index: c_int) c_int {
+    if (index > 0) return index;
+    return c.lua_gettop(L) + index + 1;
+}
+
+fn appendJsonString(allocator: std.mem.Allocator, out: *std.ArrayList(u8), value: []const u8) !void {
+    try out.append(allocator, '"');
+    for (value) |ch| {
+        switch (ch) {
+            '"' => try out.appendSlice(allocator, "\\\""),
+            '\\' => try out.appendSlice(allocator, "\\\\"),
+            '\n' => try out.appendSlice(allocator, "\\n"),
+            '\r' => try out.appendSlice(allocator, "\\r"),
+            '\t' => try out.appendSlice(allocator, "\\t"),
+            else => try out.append(allocator, ch),
+        }
+    }
+    try out.append(allocator, '"');
 }

@@ -39,6 +39,16 @@ pub fn build(b: *std.Build) void {
     addHarfBuzzShape(b, runtime_shared_mod);
     addXatlas(b, runtime_shared_mod);
 
+    const lua_backend_mod = b.createModule(.{
+        .root_source_file = b.path("src/runtime/shared/lua_backend.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "friendly_engine", .module = engine_mod },
+        },
+    });
+    lua_backend_mod.addIncludePath(b.path("third_party/luajit/src"));
+
     const zigimg_dep = b.dependency("zigimg", .{
         .target = target,
         .optimize = optimize,
@@ -57,6 +67,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "friendly_engine", .module = engine_mod },
                 .{ .name = "runtime_shared", .module = runtime_shared_mod },
+                .{ .name = "lua_backend", .module = lua_backend_mod },
             },
         }),
     });
@@ -147,10 +158,12 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "runtime_shared", .module = runtime_shared_mod },
                 .{ .name = "zgltf", .module = zgltf_dep.module("zgltf") },
                 .{ .name = "zigimg", .module = zigimg_dep.module("zigimg") },
+                .{ .name = "lua_backend", .module = lua_backend_mod },
             },
         }),
     });
     tools_exe.root_module.linkSystemLibrary("c", .{});
+    linkLuaJit(b, tools_exe, target);
     linkZphysics(tools_exe, zphysics_dep);
     b.installArtifact(tools_exe);
 

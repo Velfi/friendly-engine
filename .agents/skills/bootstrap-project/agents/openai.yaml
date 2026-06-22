@@ -1,4 +1,0 @@
-interface:
-  display_name: "Bootstrap Project"
-  short_description: "Prepare a fresh Friendly Engine checkout."
-  default_prompt: "Use $bootstrap-project to bootstrap this Friendly Engine checkout after a fresh clone."

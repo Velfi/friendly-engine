@@ -239,7 +239,16 @@ fn registerLuaGem(ctx: *anyopaque, registry: *registry_mod.ServiceRegistry) !voi
     const gem: *LuaGem = @ptrCast(@alignCast(ctx));
     const request_name = try std.fmt.allocPrint(registry.allocator, "{s}.describe", .{gem.name});
     defer registry.allocator.free(request_name);
-    try registry.registerRequest(request_name, "Describe a custom Lua gem", .{ .call = describeLuaGem });
+    try registry.registerRequest(request_name, "Describe a custom Lua gem", .{ .context = gem, .call = describeLuaGem });
+    const call_request_name = try std.fmt.allocPrint(registry.allocator, "{s}.call", .{gem.name});
+    defer registry.allocator.free(call_request_name);
+    try registry.registerRequest(call_request_name, "Call a function on a custom Lua gem; payload is function name newline optional payload", .{ .context = gem, .call = callLuaGem });
+    inline for (.{ "validate", "snapshot", "command" }) |function_name| {
+        const function_request_name = try std.fmt.allocPrint(registry.allocator, "{s}.{s}", .{ gem.name, function_name });
+        defer registry.allocator.free(function_request_name);
+        const lua_function_name = comptime if (std.mem.eql(u8, function_name, "command")) "command_request" else if (std.mem.eql(u8, function_name, "snapshot")) "snapshot_request" else function_name;
+        try registry.registerRequest(function_request_name, "Call a standard custom Lua gem function", .{ .context = gem, .call = standardLuaGemCall(lua_function_name) });
+    }
 }
 
 fn startLuaGem(ctx: *anyopaque, world: *framework.World) !void {
@@ -263,8 +272,31 @@ fn deinitLuaGem(ctx: *anyopaque, allocator: std.mem.Allocator) void {
     gem.deinit(allocator);
 }
 
-fn describeLuaGem(_: ?*anyopaque, allocator: std.mem.Allocator, _: []const u8) ![]u8 {
+fn describeLuaGem(ctx: ?*anyopaque, allocator: std.mem.Allocator, _: []const u8) ![]u8 {
+    const gem: ?*LuaGem = if (ctx) |value| @ptrCast(@alignCast(value)) else null;
+    if (gem) |resolved| {
+        return std.fmt.allocPrint(allocator, "{{\"kind\":\"lua\",\"name\":\"{s}\",\"main\":\"{s}\"}}", .{ resolved.name, resolved.main_path });
+    }
     return allocator.dupe(u8, "{\"kind\":\"lua\"}");
+}
+
+fn callLuaGem(ctx: ?*anyopaque, allocator: std.mem.Allocator, payload: []const u8) ![]u8 {
+    const gem: *LuaGem = @ptrCast(@alignCast(ctx orelse return error.MissingLuaGemContext));
+    const split = std.mem.indexOfScalar(u8, payload, '\n');
+    const raw_function_name = if (split) |idx| payload[0..idx] else payload;
+    const function_payload = if (split) |idx| payload[idx + 1 ..] else "";
+    const function_name = std.mem.trim(u8, raw_function_name, " \t\r\n");
+    if (function_name.len == 0) return error.MissingLuaGemFunction;
+    return luajit.runtime().callGem(gem.name, function_name, function_payload, allocator);
+}
+
+fn standardLuaGemCall(comptime function_name: []const u8) fn (?*anyopaque, std.mem.Allocator, []const u8) anyerror![]u8 {
+    return struct {
+        fn call(ctx: ?*anyopaque, allocator: std.mem.Allocator, payload: []const u8) ![]u8 {
+            const gem: *LuaGem = @ptrCast(@alignCast(ctx orelse return error.MissingLuaGemContext));
+            return luajit.runtime().callGem(gem.name, function_name, payload, allocator);
+        }
+    }.call;
 }
 
 fn noopRegister(_: *registry_mod.ServiceRegistry) !void {}

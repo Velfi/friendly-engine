@@ -277,7 +277,6 @@ pub fn drawGrassDraw(self: anytype, command_buffer: *render_commands.CommandBuff
 pub fn drawInstancedMeshDraw(self: anytype, command_buffer: *render_commands.CommandBuffer, draw: render_commands.InstancedMeshDraw) !void {
     const index = draw.mesh_index;
     if (index >= self.meshes.items.len) return;
-    const render_pass = self.render_pass orelse return;
     const cmdbuf = self.cmdbuf orelse return;
     const mesh = &self.meshes.items[index];
     if (mesh.index_count == 0) return;
@@ -286,12 +285,19 @@ pub fn drawInstancedMeshDraw(self: anytype, command_buffer: *render_commands.Com
     sdl_gpu.SDL_InsertGPUDebugLabel(cmdbuf, "instanced_mesh");
 
     const transforms = command_buffer.instanceTransforms(draw);
+    if (transforms.len == 0) return;
     var instances = try self.allocator.alloc(types.GpuMeshInstance, transforms.len);
     defer self.allocator.free(instances);
     for (transforms, 0..) |transform, idx| {
         instances[idx] = .{ .model = transform };
     }
+    if (self.render_pass) |pass| {
+        sdl_gpu.SDL_EndGPURenderPass(pass);
+        self.render_pass = null;
+    }
     const instance_buffer = try gpu_instance_buffer.uploadInstancesOnCommandBuffer(self, cmdbuf, instances);
+    try shadow.resumeMainRenderPass(self, sdl_gpu.SDL_GPU_LOADOP_LOAD, sdl_gpu.SDL_GPU_LOADOP_LOAD);
+    const render_pass = self.render_pass orelse return error.RenderPassMissing;
 
     const aspect = @as(f32, @floatFromInt(self.width)) / @as(f32, @floatFromInt(self.height));
     const view = draw.camera.viewMatrix();
@@ -477,17 +483,36 @@ fn drawWaterDepthPrepass(self: anytype, command_buffer: *render_commands.Command
         self.render_pass = null;
     }
 
+    var pass = try beginWaterDepthRenderPass(self, cmdbuf, sdl_gpu.SDL_GPU_LOADOP_CLEAR);
+    defer sdl_gpu.SDL_EndGPURenderPass(pass);
+
+    for (command_buffer.entries.items) |entry| {
+        switch (entry.command) {
+            .mesh => |draw| {
+                if (draw.surface == .water) continue;
+                if (draw.instance_count != 1) return error.InvalidRenderBatchInstanceCount;
+                drawMeshDepthOnly(self, pass, cmdbuf, draw);
+            },
+            .instanced_mesh => |draw| pass = try drawInstancedMeshDepthOnly(self, pass, cmdbuf, command_buffer, draw),
+            else => {},
+        }
+    }
+}
+
+fn beginWaterDepthRenderPass(
+    self: anytype,
+    cmdbuf: *sdl_gpu.SDL_GPUCommandBuffer,
+    load_op: sdl_gpu.SDL_GPULoadOp,
+) !*sdl_gpu.SDL_GPURenderPass {
     var depth_target = sdl_gpu.SDL_GPUDepthStencilTargetInfo{
         .texture = self.water_depth_texture,
         .clear_depth = 1,
-        .load_op = sdl_gpu.SDL_GPU_LOADOP_CLEAR,
+        .load_op = load_op,
         .store_op = sdl_gpu.SDL_GPU_STOREOP_STORE,
         .stencil_load_op = sdl_gpu.SDL_GPU_LOADOP_DONT_CARE,
         .stencil_store_op = sdl_gpu.SDL_GPU_STOREOP_DONT_CARE,
     };
     const pass = sdl_gpu.SDL_BeginGPURenderPass(cmdbuf, null, 0, &depth_target) orelse return error.RenderPassFailed;
-    defer sdl_gpu.SDL_EndGPURenderPass(pass);
-
     const viewport = sdl_gpu.SDL_GPUViewport{
         .x = 0,
         .y = 0,
@@ -497,18 +522,7 @@ fn drawWaterDepthPrepass(self: anytype, command_buffer: *render_commands.Command
         .max_depth = 1,
     };
     sdl_gpu.SDL_SetGPUViewport(pass, &viewport);
-
-    for (command_buffer.entries.items) |entry| {
-        switch (entry.command) {
-            .mesh => |draw| {
-                if (draw.surface == .water) continue;
-                if (draw.instance_count != 1) return error.InvalidRenderBatchInstanceCount;
-                drawMeshDepthOnly(self, pass, cmdbuf, draw);
-            },
-            .instanced_mesh => |draw| try drawInstancedMeshDepthOnly(self, pass, cmdbuf, command_buffer, draw),
-            else => {},
-        }
-    }
+    return pass;
 }
 
 fn drawMeshDepthOnly(
@@ -547,18 +561,21 @@ fn drawInstancedMeshDepthOnly(
     cmdbuf: *sdl_gpu.SDL_GPUCommandBuffer,
     command_buffer: *render_commands.CommandBuffer,
     draw: render_commands.InstancedMeshDraw,
-) !void {
+) !*sdl_gpu.SDL_GPURenderPass {
     const index = draw.mesh_index;
-    if (index >= self.meshes.items.len or draw.instance_count == 0) return;
+    if (index >= self.meshes.items.len or draw.instance_count == 0) return pass;
     const mesh = &self.meshes.items[index];
-    if (mesh.index_count == 0) return;
-    const vertex_buffer = mesh.vertex_buffer orelse return;
-    const index_buffer = mesh.index_buffer orelse return;
+    if (mesh.index_count == 0) return pass;
+    const vertex_buffer = mesh.vertex_buffer orelse return pass;
+    const index_buffer = mesh.index_buffer orelse return pass;
     const transforms = command_buffer.instanceTransforms(draw);
+    if (transforms.len == 0) return pass;
     var instances = try self.allocator.alloc(types.GpuMeshInstance, transforms.len);
     defer self.allocator.free(instances);
     for (transforms, 0..) |transform, idx| instances[idx] = .{ .model = transform };
+    sdl_gpu.SDL_EndGPURenderPass(pass);
     const instance_buffer = try gpu_instance_buffer.uploadInstancesOnCommandBuffer(self, cmdbuf, instances);
+    const resumed_pass = try beginWaterDepthRenderPass(self, cmdbuf, sdl_gpu.SDL_GPU_LOADOP_LOAD);
 
     const aspect = @as(f32, @floatFromInt(self.width)) / @as(f32, @floatFromInt(self.height));
     const view = draw.camera.viewMatrix();
@@ -566,16 +583,17 @@ fn drawInstancedMeshDepthOnly(
     const view_proj = editor_math.Mat4.mul(proj, view);
     const uniforms = InstancedSceneUniforms{ .view_proj = view_proj.m };
     sdl_gpu.SDL_PushGPUVertexUniformData(cmdbuf, 0, &uniforms, @intCast(@sizeOf(InstancedSceneUniforms)));
-    sdl_gpu.SDL_BindGPUGraphicsPipeline(pass, self.instanced_depth_prepass_pipeline);
+    sdl_gpu.SDL_BindGPUGraphicsPipeline(resumed_pass, self.instanced_depth_prepass_pipeline);
 
     const vertex_bindings = [_]sdl_gpu.SDL_GPUBufferBinding{
         .{ .buffer = vertex_buffer, .offset = 0 },
         .{ .buffer = instance_buffer, .offset = 0 },
     };
-    sdl_gpu.SDL_BindGPUVertexBuffers(pass, 0, &vertex_bindings, 2);
+    sdl_gpu.SDL_BindGPUVertexBuffers(resumed_pass, 0, &vertex_bindings, 2);
     const index_binding = sdl_gpu.SDL_GPUBufferBinding{ .buffer = index_buffer, .offset = 0 };
-    sdl_gpu.SDL_BindGPUIndexBuffer(pass, &index_binding, sdl_gpu.SDL_GPU_INDEXELEMENTSIZE_32BIT);
-    sdl_gpu.SDL_DrawGPUIndexedPrimitives(pass, mesh.index_count, draw.instance_count, 0, 0, 0);
+    sdl_gpu.SDL_BindGPUIndexBuffer(resumed_pass, &index_binding, sdl_gpu.SDL_GPU_INDEXELEMENTSIZE_32BIT);
+    sdl_gpu.SDL_DrawGPUIndexedPrimitives(resumed_pass, mesh.index_count, draw.instance_count, 0, 0, 0);
+    return resumed_pass;
 }
 
 fn sceneUsesMsaa(self: anytype) bool {

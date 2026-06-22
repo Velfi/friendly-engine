@@ -253,7 +253,7 @@ fn buildModal(ui: *core_ui.UiContext, state: *pm_state.ProjectManagerState, wind
     try core_ui.layout.sameLine(ui);
     if ((try button(ui, "pm-cancel", "Cancel", 96, null, false)).clicked) state.cancelMode();
     const confirm_label: []const u8 = if (state.mode == .create) "Create" else "Close";
-    if ((try button(ui, "pm-confirm", confirm_label, 96, null, false)).clicked) try state.submitInput();
+    if ((try button(ui, "pm-confirm", confirm_label, 96, null, false)).clicked) state.submitInputFromUi();
     try core_ui.layout.endSameLine(ui);
     ui.endPanel();
 }

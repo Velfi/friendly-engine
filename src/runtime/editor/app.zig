@@ -68,12 +68,19 @@ pub fn runEditor(init: std.process.Init) !void {
         .runtime = .editor,
     };
 
-    var boot = try friendly_engine.bootstrap.bootWorld(
-        std.heap.page_allocator,
-        init.io,
-        config,
-        "engine.kdl",
-    );
+    var boot = if (run_options.open_current)
+        try friendly_engine.bootstrap.bootWorld(
+            std.heap.page_allocator,
+            init.io,
+            config,
+            "engine.kdl",
+        )
+    else
+        try friendly_engine.bootstrap.bootEngineOnly(
+            std.heap.page_allocator,
+            init.io,
+            config,
+        );
     defer boot.deinit();
     const world = &boot.world;
     friendly_engine.game.setActiveWorld(world);
@@ -81,9 +88,6 @@ pub fn runEditor(init: std.process.Init) !void {
     const current_project_path = try std.process.currentPathAlloc(init.io, std.heap.page_allocator);
     defer std.heap.page_allocator.free(current_project_path);
     var boot_project_open = run_options.open_current;
-    if (!run_options.open_current) {
-        try boot.closeProject();
-    }
 
     var persistence_backend = try shared.file_persistence.FilePersistenceBackend.init(
         std.heap.page_allocator,

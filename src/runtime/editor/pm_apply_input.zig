@@ -48,7 +48,7 @@ fn applyModalKeys(state: *pm_state.ProjectManagerState, input: core_ui.InputStat
         }
     }
     if ((state.mode == .create or state.mode == .preset_name) and input.backspace_pressed) popInput(state);
-    if (input.enter_pressed) try state.submitInput();
+    if (input.enter_pressed) state.submitInputFromUi();
 }
 
 fn applyShortcuts(state: *pm_state.ProjectManagerState, acc: *editor_core_ui_input.Accumulator) !void {

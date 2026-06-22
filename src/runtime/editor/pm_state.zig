@@ -221,7 +221,7 @@ pub const ProjectManagerState = struct {
     pub fn beginMode(self: *ProjectManagerState, mode: pm_types.InputMode, seed: []const u8) void {
         self.mode = mode;
         self.input_len = @min(seed.len, self.input_buf.len);
-        @memcpy(self.input_buf[0..self.input_len], seed[0..self.input_len]);
+        std.mem.copyForwards(u8, self.input_buf[0..self.input_len], seed[0..self.input_len]);
     }
 
     pub fn cancelMode(self: *ProjectManagerState) void {
@@ -241,6 +241,17 @@ pub const ProjectManagerState = struct {
             .preset_name => try self.submitPresetName(),
             .about => self.cancelMode(),
         }
+    }
+
+    pub fn submitInputFromUi(self: *ProjectManagerState) void {
+        self.submitInput() catch |err| switch (err) {
+            error.MissingPath => {},
+            else => {
+                var buf: [128]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, "Submit failed: {s}", .{@errorName(err)}) catch unreachable;
+                self.setStatus(msg);
+            },
+        };
     }
 
     pub fn saveConfig(self: *ProjectManagerState) !void {

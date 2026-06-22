@@ -77,6 +77,7 @@ pub const BackendVTable = struct {
     deinit: *const fn (context: *anyopaque) void,
     load_gem: *const fn (context: *anyopaque, name: []const u8, source: []const u8) anyerror!void,
     eval: *const fn (context: *anyopaque, source: []const u8) anyerror!void,
+    call_gem: *const fn (context: *anyopaque, gem_name: []const u8, function_name: []const u8, payload: []const u8, allocator: std.mem.Allocator) anyerror![]u8,
     controller_actions: *const fn (context: *anyopaque, gem_name: []const u8, allocator: std.mem.Allocator) anyerror!ScriptedControllerActions,
     update_controller: *const fn (context: *anyopaque, gem_name: []const u8, input: ScriptedControllerInput, allocator: std.mem.Allocator) anyerror!ScriptedControllerResult,
 };
@@ -169,6 +170,11 @@ pub const Runtime = struct {
     pub fn controllerActions(self: *Runtime, gem_name: []const u8, allocator: std.mem.Allocator) !ScriptedControllerActions {
         const backend = self.backend orelse return error.LuaJitBackendMissing;
         return backend.vtable.controller_actions(backend.context, gem_name, allocator);
+    }
+
+    pub fn callGem(self: *Runtime, gem_name: []const u8, function_name: []const u8, payload: []const u8, allocator: std.mem.Allocator) ![]u8 {
+        const backend = self.backend orelse return error.LuaJitBackendMissing;
+        return backend.vtable.call_gem(backend.context, gem_name, function_name, payload, allocator);
     }
 
     pub fn updateController(self: *Runtime, gem_name: []const u8, input: ScriptedControllerInput, allocator: std.mem.Allocator) !ScriptedControllerResult {

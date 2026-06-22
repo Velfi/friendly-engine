@@ -8,7 +8,7 @@ const assets_manifest = @import("assets_manifest.zig");
 const asset_pack = @import("asset_pack.zig");
 const assets_query = @import("assets_query.zig");
 
-const max_asset_bytes: usize = 64 * 1024 * 1024;
+const max_asset_bytes: usize = 256 * 1024 * 1024;
 
 pub const PipelinePaths = struct {
     source_dir: []const u8 = "assets/source",
@@ -206,6 +206,10 @@ pub fn runCli(allocator: std.mem.Allocator, io: std.Io, args: []const []const u8
         try assets_query.runCli(allocator, io, args[2..]);
         return;
     }
+    if (std.mem.eql(u8, command, "request")) {
+        try @import("request.zig").runCli(allocator, io, args[2..]);
+        return;
+    }
 
     var paths = PipelinePaths{};
     try applyCliFlags(&paths, args[2..]);
@@ -314,11 +318,15 @@ fn applyCliFlags(paths: *PipelinePaths, flags: []const []const u8) !void {
 
 fn printUsage() void {
     std.debug.print(
-        "usage: friendly_engine_tools <import|bundle|bake-scene|world-bake|terrain|bake|describe|assets.describe|write-schemas> [--source dir] [--cache dir] [--bundles dir] [--target name] [--scene path] [--cell x,y,z]\n",
+        "usage: friendly_engine_tools <import|bundle|bake-scene|world-bake|terrain|bake|describe|assets.describe|request|write-schemas> [--source dir] [--cache dir] [--bundles dir] [--target name] [--scene path] [--cell x,y,z] [--profile] [--quiet]\n",
         .{},
     );
     std.debug.print(
         "       friendly_engine_tools terrain validate [--project dir] [--world path]\n",
+        .{},
+    );
+    std.debug.print(
+        "       friendly_engine_tools request --project dir --name request.name [--payload json]\n",
         .{},
     );
 }
