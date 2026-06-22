@@ -47,9 +47,12 @@ pub const ProjectManagerState = struct {
     window: ?*SDL_Window = null,
     list_filter: pm_types.ListFilter = .all,
     open_window_menu: menu.WindowMenuId = .none,
+    pending_dialog_kind_request: pm_types.PendingDialogKind = .none,
+    pending_dialog_project_index: ?usize = null,
     pending_dialog_path_buf: [512]u8 = undefined,
     pending_dialog_path_len: std.atomic.Value(u16) = std.atomic.Value(u16).init(0),
     pending_dialog_kind_atomic: std.atomic.Value(u8) = std.atomic.Value(u8).init(0),
+    pending_dialog_project_index_atomic: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
     should_quit: bool = false,
     pending_open_editor: bool = false,
 
@@ -59,7 +62,7 @@ pub const ProjectManagerState = struct {
         environ_map: *const std.process.Environ.Map,
         workspace_path: []const u8,
         enabled_modules: []const []const u8,
-        enable_renderer: bool,
+        _: bool,
     ) !ProjectManagerState {
         const state_file_path = try pm_util.resolveProjectManagerStatePath(allocator, environ_map);
 
@@ -90,24 +93,10 @@ pub const ProjectManagerState = struct {
         state.syncCreatePresetSelection();
         state.loadPresetScratch(state.selected_preset_index);
 
-        if (state.projects.items.len == 0) {
-            const default_modules_summary = try pm_util.formatEnabledModules(allocator, enabled_modules);
-            defer allocator.free(default_modules_summary);
-            const initial_entry = try pm_util.makeProjectEntry(
-                allocator,
-                std.fs.path.basename(workspace_path),
-                workspace_path,
-                if (enable_renderer) "Forward+" else "Headless",
-                default_modules_summary,
-                "Current workspace",
-                "Loaded from engine.kdl",
-            );
-            try state.projects.append(allocator, initial_entry);
-            state.selected_index = 0;
-            try pm_state_config.saveConfig(&state);
-            state.setStatus("Project Manager initialized (new config)");
-        } else if (loaded_from_disk) {
+        if (loaded_from_disk) {
             state.setStatus("Project Manager loaded from OS app data");
+        } else {
+            state.setStatus("Project Manager initialized (empty)");
         }
         return state;
     }
@@ -137,10 +126,19 @@ pub const ProjectManagerState = struct {
         if (dialog_len > 0) {
             const dialog_kind_val = self.pending_dialog_kind_atomic.swap(0, .acquire);
             const dialog_kind: pm_types.PendingDialogKind = @enumFromInt(dialog_kind_val);
+            const dialog_index_raw = self.pending_dialog_project_index_atomic.swap(0, .acquire);
+            const dialog_index = if (dialog_index_raw == 0) null else @as(usize, @intCast(dialog_index_raw - 1));
             const dialog_path = self.pending_dialog_path_buf[0..dialog_len];
             switch (dialog_kind) {
                 .none => {},
                 .import_folder => try pm_state_projects.importProjectAtPath(self, dialog_path),
+                .relocate_folder => {
+                    if (dialog_index) |project_index| {
+                        try pm_state_projects.relocateProjectAtPath(self, project_index, dialog_path);
+                    } else {
+                        self.setStatus("Relocate failed: missing target project");
+                    }
+                },
             }
         }
         return true;
@@ -168,15 +166,30 @@ pub const ProjectManagerState = struct {
     }
 
     pub fn requestImportFolderDialog(self: *ProjectManagerState, window: *SDL_Window) !void {
+        self.pending_dialog_kind_request = .import_folder;
+        self.pending_dialog_project_index = null;
         const default_location = try ProjectManagerState.nullTerminatedPath(self.allocator, self.workspace_path);
         defer self.allocator.free(default_location);
         SDL_ShowOpenFolderDialog(pm_util.folderDialogCallback, self, window, default_location.ptr, false);
     }
 
-    pub fn queueDialogPath(self: *ProjectManagerState, path: []const u8, kind: pm_types.PendingDialogKind) void {
+    pub fn requestRelocateFolderDialog(self: *ProjectManagerState, window: *SDL_Window) !void {
+        if (self.projects.items.len == 0) return;
+        self.pending_dialog_kind_request = .relocate_folder;
+        self.pending_dialog_project_index = self.selected_index;
+        const selected = self.projects.items[self.selected_index];
+        const default_path = std.fs.path.dirname(selected.path) orelse self.workspace_path;
+        const default_location = try ProjectManagerState.nullTerminatedPath(self.allocator, default_path);
+        defer self.allocator.free(default_location);
+        SDL_ShowOpenFolderDialog(pm_util.folderDialogCallback, self, window, default_location.ptr, false);
+    }
+
+    pub fn queueDialogPath(self: *ProjectManagerState, path: []const u8, kind: pm_types.PendingDialogKind, project_index: ?usize) void {
         const len = @min(path.len, self.pending_dialog_path_buf.len);
         @memcpy(self.pending_dialog_path_buf[0..len], path[0..len]);
         self.pending_dialog_kind_atomic.store(@intFromEnum(kind), .release);
+        const stored_index: u32 = if (project_index) |idx| @as(u32, @intCast(idx + 1)) else 0;
+        self.pending_dialog_project_index_atomic.store(stored_index, .release);
         self.pending_dialog_path_len.store(@intCast(len), .release);
     }
 

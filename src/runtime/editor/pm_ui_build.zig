@@ -4,6 +4,7 @@ const friendly_engine = @import("friendly_engine");
 const menu = @import("menu.zig");
 const pm_presets = @import("pm_presets.zig");
 const pm_state = @import("pm_state.zig");
+const pm_state_projects = @import("pm_state_projects.zig");
 const pm_util = @import("pm_util.zig");
 
 const core_ui = friendly_engine.modules.core_ui;
@@ -17,7 +18,7 @@ const panel_pad: f32 = 8;
 const inspector_pad: f32 = 12;
 const row_h: f32 = 26;
 const row_spacing: f32 = 6;
-const project_row_h: f32 = 72;
+const project_row_h: f32 = 86;
 const project_row_inset: f32 = 8;
 
 const Layout = struct {
@@ -114,7 +115,8 @@ fn buildTopBar(ui: *core_ui.UiContext, state: *pm_state.ProjectManagerState, rec
     if ((try button(ui, "pm-import", "Import", button_w, null, false)).clicked) {
         if (state.window) |window| try state.requestImportFolderDialog(window);
     }
-    if ((try button(ui, "pm-open", "Open", button_w, null, state.projects.items.len == 0)).clicked) try openSelected(state);
+    const open_disabled = state.projects.items.len == 0 or (state.projects.items.len > 0 and selectedProjectIsStale(state));
+    if ((try button(ui, "pm-open", "Open", button_w, null, open_disabled)).clicked) try openSelected(state);
     try core_ui.layout.endSameLine(ui);
     ui.endPanel();
 }
@@ -166,6 +168,12 @@ fn buildProjectList(ui: *core_ui.UiContext, state: *pm_state.ProjectManagerState
             .w = row.rect.w - project_row_inset * 2,
             .h = 16,
         }, entry.tags, false);
+        try text(ui, entry.status, .{
+            .x = row.rect.x + project_row_inset,
+            .y = row.rect.y + 62,
+            .w = row.rect.w - project_row_inset * 2,
+            .h = 16,
+        }, entry.status, true);
     }
     ui.endPanel();
 }
@@ -183,8 +191,22 @@ fn buildDetails(ui: *core_ui.UiContext, state: *pm_state.ProjectManagerState, re
     try ui.label(selected.name);
     try detail(ui, "Last opened", selected.last_opened);
     try detail(ui, "Path", selected.path);
+    try detail(ui, "Status", selected.status);
     try ui.label("Enabled modules");
     try core_ui.widgets_feedback.statusLabel(ui, selected.tags);
+    try core_ui.layout.spacer(ui, 6);
+    try core_ui.layout.sameLine(ui);
+    const stale = std.mem.startsWith(u8, selected.status, "Stale");
+    if ((try button(ui, "pm-relocate", "Relocate...", 102, null, false)).clicked) {
+        if (state.window) |window| try state.requestRelocateFolderDialog(window);
+    }
+    if ((try button(ui, "pm-remove", "Remove", 88, null, false)).clicked) {
+        try pm_state_projects.removeSelectedProject(state);
+    }
+    if (stale) {
+        try core_ui.widgets_feedback.statusLabel(ui, "Point this entry at the correct folder or remove it");
+    }
+    try core_ui.layout.endSameLine(ui);
     ui.endPanel();
 }
 
@@ -401,6 +423,11 @@ fn openSelected(state: *pm_state.ProjectManagerState) !void {
         const msg = std.fmt.bufPrint(&buf, "Open failed: {s}", .{@errorName(err)}) catch unreachable;
         state.setStatus(msg);
     };
+}
+
+fn selectedProjectIsStale(state: *const pm_state.ProjectManagerState) bool {
+    if (state.projects.items.len == 0 or state.selected_index >= state.projects.items.len) return false;
+    return std.mem.startsWith(u8, state.projects.items[state.selected_index].status, "Stale");
 }
 
 fn setErrorStatus(state: *pm_state.ProjectManagerState, prefix: []const u8, err: anyerror) void {

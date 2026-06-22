@@ -102,6 +102,7 @@ pub fn loadConfig(state: *pm_state.ProjectManagerState) !bool {
     defer parsed.deinit();
 
     var refreshed_project_summaries = false;
+    var marked_stale_projects = false;
     for (parsed.value.projects) |project| {
         var entry = try pm_util.makeProjectEntry(
             state.allocator,
@@ -114,7 +115,18 @@ pub fn loadConfig(state: *pm_state.ProjectManagerState) !bool {
         );
         errdefer pm_util.deinitProjectEntry(state.allocator, &entry);
 
-        const refreshed_tags = try pm_util.readModulesSummaryForPath(state.allocator, state.io, project.path);
+        const refreshed_tags = pm_util.readModulesSummaryForPath(state.allocator, state.io, project.path) catch |err| switch (err) {
+            error.FileNotFound => {
+                if (!std.mem.startsWith(u8, entry.status, "Stale")) {
+                    state.allocator.free(entry.status);
+                    entry.status = try state.allocator.dupe(u8, "Stale: missing on disk");
+                    marked_stale_projects = true;
+                }
+                try state.projects.append(state.allocator, entry);
+                continue;
+            },
+            else => return err,
+        };
         if (!std.mem.eql(u8, entry.tags, refreshed_tags)) {
             refreshed_project_summaries = true;
         }
@@ -145,7 +157,7 @@ pub fn loadConfig(state: *pm_state.ProjectManagerState) !bool {
     }
     state.allocator.free(state.create_preset_name);
     state.create_preset_name = try state.allocator.dupe(u8, parsed.value.last_preset);
-    if (refreshed_project_summaries) try saveConfig(state);
+    if (refreshed_project_summaries or marked_stale_projects) try saveConfig(state);
     return true;
 }
 
@@ -229,6 +241,50 @@ test "config without presets loads as empty back-compat" {
     try std.testing.expect(try loadConfig(&state));
     try std.testing.expectEqual(@as(usize, 0), state.user_presets.items.len);
     try std.testing.expectEqualStrings("Minimal", state.create_preset_name);
+}
+
+test "config keeps stale projects visible" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    const workspace_path = try realPathDirAlloc(allocator, tmp.dir);
+    defer allocator.free(workspace_path);
+    const state_file_path = try std.fs.path.join(allocator, &.{ workspace_path, "project_manager.json" });
+    defer allocator.free(state_file_path);
+
+    const missing_project_path = try std.fs.path.join(allocator, &.{ workspace_path, "missing-project" });
+    defer allocator.free(missing_project_path);
+
+    const payload = try std.fmt.allocPrint(
+        allocator,
+        "{{ \"schema_version\": 1, \"selected_index\": 0, \"projects\": [{{ \"name\": \"missing-project\", \"path\": \"{s}\", \"renderer\": \"Forward+\", \"tags\": \"gem.core_ui\", \"last_opened\": \"Just imported\", \"status\": \"Imported\" }}] }}\n",
+        .{missing_project_path},
+    );
+    defer allocator.free(payload);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{
+        .sub_path = state_file_path,
+        .data = payload,
+    });
+
+    var state = pm_state.ProjectManagerState{
+        .allocator = allocator,
+        .io = std.testing.io,
+        .workspace_path = try allocator.dupe(u8, workspace_path),
+        .state_file_path = try allocator.dupe(u8, state_file_path),
+        .projects = .empty,
+        .default_enabled_modules_json = try allocator.dupe(u8, ""),
+        .default_enabled_modules = try allocator.alloc([]u8, 0),
+        .user_presets = .empty,
+        .create_preset_name = try allocator.dupe(u8, "Minimal"),
+        .preset_edit_modules = try allocator.alloc(bool, pm_presets.catalogModuleNames().len),
+    };
+    defer state.deinit();
+
+    try std.testing.expect(try loadConfig(&state));
+    try std.testing.expectEqual(@as(usize, 1), state.projects.items.len);
+    try std.testing.expectEqualStrings("Stale: missing on disk", state.projects.items[0].status);
+    try std.testing.expectEqualStrings("gem.core_ui", state.projects.items[0].tags);
 }
 
 fn realPathDirAlloc(allocator: std.mem.Allocator, dir: std.Io.Dir) ![]u8 {

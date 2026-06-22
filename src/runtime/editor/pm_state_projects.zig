@@ -1,6 +1,7 @@
 const std = @import("std");
 const friendly_engine = @import("friendly_engine");
 const pm_presets = @import("pm_presets.zig");
+const pm_types = @import("pm_types.zig");
 const pm_util = @import("pm_util.zig");
 const pm_state = @import("pm_state.zig");
 const pm_state_config = @import("pm_state_config.zig");
@@ -58,6 +59,10 @@ pub fn openSelectedProject(state: *pm_state.ProjectManagerState) !void {
     }
     const idx = state.selected_index;
     var entry = state.projects.items[idx];
+    if (isStaleProject(&entry)) {
+        state.setStatus("Open failed: project missing on disk");
+        return error.FileNotFound;
+    }
     state.allocator.free(entry.last_opened);
     entry.last_opened = try state.allocator.dupe(u8, "Opened just now");
     state.allocator.free(entry.status);
@@ -109,6 +114,33 @@ pub fn removeProject(state: *pm_state.ProjectManagerState, target: ?[]const u8) 
     }
     try pm_state_config.saveConfig(state);
     state.setStatus("Project removed from list");
+}
+
+pub fn relocateProjectAtPath(state: *pm_state.ProjectManagerState, target_index: usize, absolute_path: []const u8) !void {
+    if (target_index >= state.projects.items.len) return error.ProjectNotFound;
+    if (projectExistsAtOtherIndex(state, absolute_path, target_index)) {
+        state.setStatus("Relocate skipped: project already in list");
+        return error.ProjectExists;
+    }
+
+    var project_dir = try std.Io.Dir.openDirAbsolute(state.io, absolute_path, .{});
+    project_dir.close(state.io);
+
+    var entry = state.projects.items[target_index];
+    state.allocator.free(entry.name);
+    entry.name = try state.allocator.dupe(u8, std.fs.path.basename(absolute_path));
+    state.allocator.free(entry.path);
+    entry.path = try state.allocator.dupe(u8, absolute_path);
+    state.allocator.free(entry.tags);
+    entry.tags = try pm_util.readModulesSummaryForPath(state.allocator, state.io, absolute_path);
+    state.allocator.free(entry.last_opened);
+    entry.last_opened = try state.allocator.dupe(u8, "Relinked just now");
+    state.allocator.free(entry.status);
+    entry.status = try state.allocator.dupe(u8, "Relinked in Project Manager");
+    state.projects.items[target_index] = entry;
+    state.selected_index = target_index;
+    try pm_state_config.saveConfig(state);
+    state.setStatus("Project relinked and saved");
 }
 
 pub fn resetSelectedProjectToStarter(state: *pm_state.ProjectManagerState) !void {
@@ -386,6 +418,18 @@ fn projectExists(state: *const pm_state.ProjectManagerState, path: []const u8) b
     return false;
 }
 
+fn projectExistsAtOtherIndex(state: *const pm_state.ProjectManagerState, path: []const u8, ignore_index: usize) bool {
+    for (state.projects.items, 0..) |entry, index| {
+        if (index == ignore_index) continue;
+        if (std.mem.eql(u8, entry.path, path)) return true;
+    }
+    return false;
+}
+
+fn isStaleProject(entry: *const pm_types.ProjectManagerEntry) bool {
+    return std.mem.startsWith(u8, entry.status, "Stale");
+}
+
 fn findProjectIndex(state: *const pm_state.ProjectManagerState, target: []const u8) ?usize {
     for (state.projects.items, 0..) |entry, index| {
         if (std.mem.eql(u8, entry.path, target) or std.mem.eql(u8, entry.name, target)) {
@@ -497,6 +541,53 @@ test "project import registers existing folder without creating starter files" {
     const engine_path = try std.fs.path.join(allocator, &.{ project_path, "engine.kdl" });
     defer allocator.free(engine_path);
     try std.testing.expectError(error.FileNotFound, std.Io.Dir.cwd().access(std.testing.io, engine_path, .{}));
+}
+
+test "project relocate keeps entry and updates path" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    const workspace_path = try realPathDirAlloc(allocator, tmp.dir);
+    defer allocator.free(workspace_path);
+    const state_file_path = try std.fs.path.join(allocator, &.{ workspace_path, "project_manager.json" });
+    defer allocator.free(state_file_path);
+
+    var state = try makeTestState(allocator, workspace_path, state_file_path);
+    defer state.deinit();
+
+    const stale_path = try std.fs.path.join(allocator, &.{ workspace_path, "stale-project" });
+    defer allocator.free(stale_path);
+    const relocated_dir = try std.fs.path.join(allocator, &.{ workspace_path, "relocated-project" });
+    defer allocator.free(relocated_dir);
+    try tmp.dir.createDirPath(std.testing.io, "relocated-project");
+    try tmp.dir.writeFile(std.testing.io, .{
+        .sub_path = "relocated-project/engine.kdl",
+        .data =
+        \\engine startup_scene="scenes/main.kdl" {
+        \\}
+        \\
+        ,
+    });
+
+    const entry = try pm_util.makeProjectEntry(
+        allocator,
+        "stale-project",
+        stale_path,
+        "Forward+",
+        "gem.core_ui",
+        "Just imported",
+        "Stale: missing on disk",
+    );
+    try state.projects.append(allocator, entry);
+    state.selected_index = 0;
+
+    try relocateProjectAtPath(&state, 0, relocated_dir);
+
+    try std.testing.expectEqual(@as(usize, 1), state.projects.items.len);
+    try std.testing.expectEqualStrings(relocated_dir, state.projects.items[0].path);
+    try std.testing.expectEqualStrings("relocated-project", state.projects.items[0].name);
+    try std.testing.expectEqualStrings("Relinked in Project Manager", state.projects.items[0].status);
 }
 
 test "project remove updates list only" {

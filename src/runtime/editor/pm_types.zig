@@ -29,4 +29,5 @@ pub const ListFilter = enum {
 pub const PendingDialogKind = enum {
     none,
     import_folder,
+    relocate_folder,
 };

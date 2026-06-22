@@ -12,7 +12,12 @@ pub fn folderDialogCallback(userdata: ?*anyopaque, filelist: ?[*]const ?[*:0]con
     _ = filter;
     const state = @as(*@import("pm_state.zig").ProjectManagerState, @ptrCast(@alignCast(userdata.?)));
     if (filelist == null or filelist.?[0] == null) return;
-    state.queueDialogPath(std.mem.span(filelist.?[0].?), .import_folder);
+    const kind = state.pending_dialog_kind_request;
+    const project_index = switch (kind) {
+        .relocate_folder => state.pending_dialog_project_index,
+        else => null,
+    };
+    state.queueDialogPath(std.mem.span(filelist.?[0].?), kind, project_index);
 }
 
 pub fn makeProjectEntry(
