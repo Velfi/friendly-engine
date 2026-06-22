@@ -152,6 +152,8 @@ fn buildProjectList(ui: *core_ui.UiContext, state: *pm_state.ProjectManagerState
             state.selected_index = project_idx;
             if (ui.input.primary_click_count >= 2) {
                 try openSelected(state);
+                ui.endPanel();
+                return;
             } else {
                 try state.saveConfig();
             }

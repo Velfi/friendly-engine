@@ -10,6 +10,7 @@ const project_editor_view_nav = @import("project_editor_view_nav.zig");
 const project_editor_life = @import("project_editor_life.zig");
 const project_editor_architecture_curve = @import("project_editor_architecture_curve.zig");
 const project_editor_ui_world = @import("project_editor_ui_world.zig");
+const viewport_context_menu = @import("project_editor_viewport_context_menu.zig");
 
 const core_ui = friendly_engine.modules.core_ui;
 const ProjectEditorState = project_editor_state.ProjectEditorState;
@@ -121,7 +122,11 @@ pub fn applyViewportPointerRelease(state: *ProjectEditorState, ui: *core_ui.UiCo
 
     if (input.middle_released or input.right_button_released) {
         if (state.drag_mode == .camera_orbit or state.drag_mode == .camera_pan or state.drag_mode == .camera_zoom) {
+            if (input.right_button_released and state.drag_mode == .camera_pan and !state.drag_moved and viewportAcceptsPointer(state, ui, mouse.x, mouse.y)) {
+                viewport_context_menu.openAtScreen(state, mouse.x, mouse.y);
+            }
             state.drag_mode = .none;
+            state.drag_moved = false;
         }
     }
 
@@ -166,8 +171,11 @@ pub fn applyViewportPointerPress(state: *ProjectEditorState, ui: *core_ui.UiCont
     } else if (input.right_button_pressed) {
         if (viewportAcceptsPointer(state, ui, mouse.x, mouse.y)) {
             state.drag_mode = if (state.walk_mode) .none else .camera_pan;
+            state.click_start_x = mouse.x;
+            state.click_start_y = mouse.y;
             state.drag_last_x = mouse.x;
             state.drag_last_y = mouse.y;
+            state.drag_moved = false;
         }
     } else if (input.primary_pressed) {
         if (viewportAcceptsPointer(state, ui, mouse.x, mouse.y)) {

@@ -18,6 +18,7 @@ const project_editor_ui_life = @import("project_editor_ui_life.zig");
 const ui_world = @import("project_editor_ui_world.zig");
 const project_editor_ui_prop = @import("project_editor_ui_prop.zig");
 const project_editor_preferences = @import("project_editor_preferences.zig");
+const viewport_context_menu = @import("project_editor_viewport_context_menu.zig");
 const ui_build_left = @import("project_editor_ui_build_left.zig");
 const ui_build_palette = @import("project_editor_ui_build_palette.zig");
 const project_editor_modes = @import("project_editor_modes.zig");
@@ -100,6 +101,8 @@ pub fn build(ui: *core_ui.UiContext, state: *ProjectEditorState, layout: Layout,
     start_ns = friendly_engine.core.diagnostics.scopedTimerStart();
     if (preferences) |ctx| try project_editor_preferences.build(ui, state, ctx);
     recordUiSection(state, .ui_preferences, start_ns);
+
+    _ = try viewport_context_menu.build(ui, state);
 
     if (state.editor_error_detail != null) {
         try buildEditorErrorModal(ui, state);

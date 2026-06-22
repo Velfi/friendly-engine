@@ -1,0 +1,575 @@
+{
+  "schema_version": 1,
+  "target": "client-debug",
+  "pack_file": "assets/bundles/client-debug/game.fpack",
+  "asset_count": 63,
+  "assets": [
+    {
+      "asset_id": 11274102973163447168,
+      "artifact_path": "assets/cache/client-debug/textures/default.rgba",
+      "kind": "texture",
+      "content_hash": 10203977015267261341,
+      "offset": 0,
+      "size": 65536,
+      "dependencies": []
+    },
+    {
+      "asset_id": 17461427745342194941,
+      "artifact_path": "assets/cache/client-debug/meshes/box.fmesh",
+      "kind": "mesh",
+      "content_hash": 8982891309241524481,
+      "offset": 65536,
+      "size": 125,
+      "dependencies": []
+    },
+    {
+      "asset_id": 1766114647135127611,
+      "artifact_path": "assets/cache/client-debug/meshes/rigged_simple.fmesh",
+      "kind": "mesh",
+      "content_hash": 16764626200796011678,
+      "offset": 65661,
+      "size": 15845,
+      "dependencies": []
+    },
+    {
+      "asset_id": 10110697987270281712,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/search.svg",
+      "kind": "asset",
+      "content_hash": 718012604408231427,
+      "offset": 81506,
+      "size": 457,
+      "dependencies": []
+    },
+    {
+      "asset_id": 13126453201647825743,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/cube-dots.svg",
+      "kind": "asset",
+      "content_hash": 1108244985951950229,
+      "offset": 81963,
+      "size": 1100,
+      "dependencies": []
+    },
+    {
+      "asset_id": 565043121935654061,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/drag-hand-gesture.svg",
+      "kind": "asset",
+      "content_hash": 3144639452369578520,
+      "offset": 83063,
+      "size": 1610,
+      "dependencies": []
+    },
+    {
+      "asset_id": 16207916743550824215,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/frame-select.svg",
+      "kind": "asset",
+      "content_hash": 3532172708312936156,
+      "offset": 84673,
+      "size": 1620,
+      "dependencies": []
+    },
+    {
+      "asset_id": 16633751928964215851,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/view-grid.svg",
+      "kind": "asset",
+      "content_hash": 1335295916203418131,
+      "offset": 86293,
+      "size": 902,
+      "dependencies": []
+    },
+    {
+      "asset_id": 12704459990966860991,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/orthogonal-view.svg",
+      "kind": "asset",
+      "content_hash": 12883996236447482722,
+      "offset": 87195,
+      "size": 772,
+      "dependencies": []
+    },
+    {
+      "asset_id": 5242129487170837389,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/selective-tool.svg",
+      "kind": "asset",
+      "content_hash": 11860953236118810590,
+      "offset": 87967,
+      "size": 538,
+      "dependencies": []
+    },
+    {
+      "asset_id": 14119629568669056773,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/LICENSE",
+      "kind": "asset",
+      "content_hash": 18416836021764568728,
+      "offset": 88505,
+      "size": 1068,
+      "dependencies": []
+    },
+    {
+      "asset_id": 15671272737480735672,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/lock-slash.svg",
+      "kind": "asset",
+      "content_hash": 13333652987786238352,
+      "offset": 89573,
+      "size": 783,
+      "dependencies": []
+    },
+    {
+      "asset_id": 14504554183271283302,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/eye-closed.svg",
+      "kind": "asset",
+      "content_hash": 7937073384705532280,
+      "offset": 90356,
+      "size": 532,
+      "dependencies": []
+    },
+    {
+      "asset_id": 18237415975631120986,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/lock.svg",
+      "kind": "asset",
+      "content_hash": 6387572370076350538,
+      "offset": 90888,
+      "size": 409,
+      "dependencies": []
+    },
+    {
+      "asset_id": 8283962314877027199,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/package.svg",
+      "kind": "asset",
+      "content_hash": 3456017141996142214,
+      "offset": 91297,
+      "size": 437,
+      "dependencies": []
+    },
+    {
+      "asset_id": 1455402902815212411,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/settings.svg",
+      "kind": "asset",
+      "content_hash": 7839842336377031207,
+      "offset": 91734,
+      "size": 786,
+      "dependencies": []
+    },
+    {
+      "asset_id": 12509587304392165259,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/box-iso.svg",
+      "kind": "asset",
+      "content_hash": 16943659738024406671,
+      "offset": 92520,
+      "size": 927,
+      "dependencies": []
+    },
+    {
+      "asset_id": 9315441438690139621,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/select-point-3d.svg",
+      "kind": "asset",
+      "content_hash": 9325724903034317729,
+      "offset": 93447,
+      "size": 786,
+      "dependencies": []
+    },
+    {
+      "asset_id": 15379669494704861784,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/magnet.svg",
+      "kind": "asset",
+      "content_hash": 7474863247392439535,
+      "offset": 94233,
+      "size": 647,
+      "dependencies": []
+    },
+    {
+      "asset_id": 15934662283265519937,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/planet.svg",
+      "kind": "asset",
+      "content_hash": 1682679573671635574,
+      "offset": 94880,
+      "size": 455,
+      "dependencies": []
+    },
+    {
+      "asset_id": 17530843543638037038,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/perspective-view.svg",
+      "kind": "asset",
+      "content_hash": 12195152056713571716,
+      "offset": 95335,
+      "size": 795,
+      "dependencies": []
+    },
+    {
+      "asset_id": 8246810404701902314,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/select-edge-3d.svg",
+      "kind": "asset",
+      "content_hash": 3561836443024517428,
+      "offset": 96130,
+      "size": 912,
+      "dependencies": []
+    },
+    {
+      "asset_id": 4642772547358412008,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/fog.svg",
+      "kind": "asset",
+      "content_hash": 12862123106171322007,
+      "offset": 97042,
+      "size": 623,
+      "dependencies": []
+    },
+    {
+      "asset_id": 14567192383146922053,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/sphere.svg",
+      "kind": "asset",
+      "content_hash": 17833780323346664304,
+      "offset": 97665,
+      "size": 456,
+      "dependencies": []
+    },
+    {
+      "asset_id": 11309559662949900089,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/cube.svg",
+      "kind": "asset",
+      "content_hash": 5278645394213614415,
+      "offset": 98121,
+      "size": 834,
+      "dependencies": []
+    },
+    {
+      "asset_id": 4926452021483939663,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/ruler.svg",
+      "kind": "asset",
+      "content_hash": 13932403510371720862,
+      "offset": 98955,
+      "size": 385,
+      "dependencies": []
+    },
+    {
+      "asset_id": 10369298078739422048,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/box-3d-point.svg",
+      "kind": "asset",
+      "content_hash": 13761944025246417140,
+      "offset": 99340,
+      "size": 1046,
+      "dependencies": []
+    },
+    {
+      "asset_id": 11995224292163588219,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/media-image-folder.svg",
+      "kind": "asset",
+      "content_hash": 14098055648330177535,
+      "offset": 100386,
+      "size": 870,
+      "dependencies": []
+    },
+    {
+      "asset_id": 2601764114303494482,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/cursor-pointer.svg",
+      "kind": "asset",
+      "content_hash": 7916332864157696463,
+      "offset": 101256,
+      "size": 437,
+      "dependencies": []
+    },
+    {
+      "asset_id": 11375658926024591238,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/plus.svg",
+      "kind": "asset",
+      "content_hash": 15991246862382158508,
+      "offset": 101693,
+      "size": 238,
+      "dependencies": []
+    },
+    {
+      "asset_id": 3064819650047952446,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/music-note.svg",
+      "kind": "asset",
+      "content_hash": 4828467047710724319,
+      "offset": 101931,
+      "size": 330,
+      "dependencies": []
+    },
+    {
+      "asset_id": 4709819842529919219,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/xray-view.svg",
+      "kind": "asset",
+      "content_hash": 16646239483696593132,
+      "offset": 102261,
+      "size": 1004,
+      "dependencies": []
+    },
+    {
+      "asset_id": 12154572706712696915,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/dots-grid-3x3.svg",
+      "kind": "asset",
+      "content_hash": 14262197962548026197,
+      "offset": 103265,
+      "size": 2195,
+      "dependencies": []
+    },
+    {
+      "asset_id": 5724372250671969647,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/nav-arrow-right.svg",
+      "kind": "asset",
+      "content_hash": 7456124764082126826,
+      "offset": 105460,
+      "size": 219,
+      "dependencies": []
+    },
+    {
+      "asset_id": 3245245000472083089,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/folder-plus.svg",
+      "kind": "asset",
+      "content_hash": 3473255214319725166,
+      "offset": 105679,
+      "size": 651,
+      "dependencies": []
+    },
+    {
+      "asset_id": 9111578907648152256,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/copy.svg",
+      "kind": "asset",
+      "content_hash": 8909573240997955178,
+      "offset": 106330,
+      "size": 527,
+      "dependencies": []
+    },
+    {
+      "asset_id": 8967748012872057775,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/fill-color.svg",
+      "kind": "asset",
+      "content_hash": 2010488162846487885,
+      "offset": 106857,
+      "size": 844,
+      "dependencies": []
+    },
+    {
+      "asset_id": 3338020431495714720,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/color-wheel.svg",
+      "kind": "asset",
+      "content_hash": 10281727089365392379,
+      "offset": 107701,
+      "size": 1324,
+      "dependencies": []
+    },
+    {
+      "asset_id": 12286875201603995579,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/select-face-3d.svg",
+      "kind": "asset",
+      "content_hash": 3605310952150665314,
+      "offset": 109025,
+      "size": 1134,
+      "dependencies": []
+    },
+    {
+      "asset_id": 14719953202804686476,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/arc-3d.svg",
+      "kind": "asset",
+      "content_hash": 6462424992985927661,
+      "offset": 110159,
+      "size": 694,
+      "dependencies": []
+    },
+    {
+      "asset_id": 2349133409010294496,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/cube-scan.svg",
+      "kind": "asset",
+      "content_hash": 15109512387746376851,
+      "offset": 110853,
+      "size": 1082,
+      "dependencies": []
+    },
+    {
+      "asset_id": 12254364528376863396,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/play.svg",
+      "kind": "asset",
+      "content_hash": 12222595194617775945,
+      "offset": 111935,
+      "size": 383,
+      "dependencies": []
+    },
+    {
+      "asset_id": 14968424042898743621,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/list-select.svg",
+      "kind": "asset",
+      "content_hash": 7389582107419127776,
+      "offset": 112318,
+      "size": 725,
+      "dependencies": []
+    },
+    {
+      "asset_id": 9927158301356285880,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/camera.svg",
+      "kind": "asset",
+      "content_hash": 3214407775721793060,
+      "offset": 113043,
+      "size": 683,
+      "dependencies": []
+    },
+    {
+      "asset_id": 8710150846280019118,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/sun-light.svg",
+      "kind": "asset",
+      "content_hash": 10053139649409604352,
+      "offset": 113726,
+      "size": 1051,
+      "dependencies": []
+    },
+    {
+      "asset_id": 17650703707795879456,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/redo.svg",
+      "kind": "asset",
+      "content_hash": 3781988889764653338,
+      "offset": 114777,
+      "size": 475,
+      "dependencies": []
+    },
+    {
+      "asset_id": 1499356365702921006,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/floppy-disk.svg",
+      "kind": "asset",
+      "content_hash": 7329574130355113529,
+      "offset": 115252,
+      "size": 691,
+      "dependencies": []
+    },
+    {
+      "asset_id": 8182318833972820042,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/xmark.svg",
+      "kind": "asset",
+      "content_hash": 1852922719615835781,
+      "offset": 115943,
+      "size": 312,
+      "dependencies": []
+    },
+    {
+      "asset_id": 10863225906103655841,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/trash.svg",
+      "kind": "asset",
+      "content_hash": 8797929871621937287,
+      "offset": 116255,
+      "size": 527,
+      "dependencies": []
+    },
+    {
+      "asset_id": 10951416159061022583,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/rotate-camera-right.svg",
+      "kind": "asset",
+      "content_hash": 5153685600694910398,
+      "offset": 116782,
+      "size": 1298,
+      "dependencies": []
+    },
+    {
+      "asset_id": 3410961746632157991,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/scale-frame-enlarge.svg",
+      "kind": "asset",
+      "content_hash": 5967964259659840467,
+      "offset": 118080,
+      "size": 1108,
+      "dependencies": []
+    },
+    {
+      "asset_id": 779550503423846716,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/manifest.json",
+      "kind": "asset",
+      "content_hash": 4548929181414366753,
+      "offset": 119188,
+      "size": 2199,
+      "dependencies": []
+    },
+    {
+      "asset_id": 13575678678715505673,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/hammer.svg",
+      "kind": "asset",
+      "content_hash": 15542859576071119389,
+      "offset": 121387,
+      "size": 617,
+      "dependencies": []
+    },
+    {
+      "asset_id": 6689092919891386060,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/cylinder.svg",
+      "kind": "asset",
+      "content_hash": 593200670388170899,
+      "offset": 122004,
+      "size": 506,
+      "dependencies": []
+    },
+    {
+      "asset_id": 11842249880640828240,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/eye.svg",
+      "kind": "asset",
+      "content_hash": 15416809843206841706,
+      "offset": 122510,
+      "size": 426,
+      "dependencies": []
+    },
+    {
+      "asset_id": 15866436475720433410,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/light-bulb.svg",
+      "kind": "asset",
+      "content_hash": 12528367767338553504,
+      "offset": 122936,
+      "size": 618,
+      "dependencies": []
+    },
+    {
+      "asset_id": 17527291580953598207,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/undo.svg",
+      "kind": "asset",
+      "content_hash": 4081069030214412669,
+      "offset": 123554,
+      "size": 480,
+      "dependencies": []
+    },
+    {
+      "asset_id": 11617288093747408888,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/nav-arrow-down.svg",
+      "kind": "asset",
+      "content_hash": 2592693224327369078,
+      "offset": 124034,
+      "size": 219,
+      "dependencies": []
+    },
+    {
+      "asset_id": 14388504113957582896,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/box-3d-center.svg",
+      "kind": "asset",
+      "content_hash": 11728427689912293132,
+      "offset": 124253,
+      "size": 1318,
+      "dependencies": []
+    },
+    {
+      "asset_id": 15330070272122304561,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/component.svg",
+      "kind": "asset",
+      "content_hash": 16783819874750653425,
+      "offset": 125571,
+      "size": 1336,
+      "dependencies": []
+    },
+    {
+      "asset_id": 5817377826198406166,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/folder.svg",
+      "kind": "asset",
+      "content_hash": 9503104732454515441,
+      "offset": 126907,
+      "size": 460,
+      "dependencies": []
+    },
+    {
+      "asset_id": 2778035842323183729,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/minus.svg",
+      "kind": "asset",
+      "content_hash": 15474103948952257346,
+      "offset": 127367,
+      "size": 212,
+      "dependencies": []
+    },
+    {
+      "asset_id": 17478488205749304521,
+      "artifact_path": "assets/cache/client-debug/icons/iconoir/view-360.svg",
+      "kind": "asset",
+      "content_hash": 4653159797050173327,
+      "offset": 127579,
+      "size": 1003,
+      "dependencies": []
+    }
+  ]
+}

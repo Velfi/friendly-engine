@@ -42,6 +42,9 @@ pub fn handleDrag(state: *ProjectEditorState, input: core_ui.InputState) void {
             state.view_orientation = .free;
         },
         .camera_pan => {
+            const mdx = x - state.click_start_x;
+            const mdy = y - state.click_start_y;
+            if (mdx * mdx + mdy * mdy >= click_drag_threshold_sq) state.drag_moved = true;
             if (state.active_view_nav == .pan) {
                 state.camera.pan(-dx, -dy);
             } else {
