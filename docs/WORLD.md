@@ -228,7 +228,7 @@ sky_tone (sun/moon azimuth + elevation)
 + cell_fog_bank cell="x,y,z" ... (optional per-cell fog overrides)
 ```
 
-**Repo status:** MVP compiler module exists in [`src/modules/atmosphere/`](../src/modules/atmosphere/) with editor Atmosphere tool (inspector sun/moon/fog controls with cell scope indicator for fog, live sky tint and fog preview in software + GPU viewport paths), persistence to [`layers/atmosphere.kdl`](../layers/atmosphere.kdl), debounced per-cell dirty bake for fog edits and world-wide bake for sky tone, and runtime client **volumetric fog** from per-cell `atmosphere.settings` blobs keyed to the active camera cell (4-slice exponential integration along the view ray with height-based density falloff; shared math in [`fog_math.zig`](../src/modules/atmosphere/fog_math.zig), [`render_fog.zig`](../src/runtime/shared/render_fog.zig), and [`TexturedQuadLit.frag.wgsl`](../src/runtime/shared/shaders/source/TexturedQuadLit.frag.wgsl); software rasterizer + SDL3 GPU lit shader; fails fast when blob missing on world-streamed cells).
+**Repo status:** MVP compiler module exists in [`src/modules/atmosphere/`](../src/modules/atmosphere/) with editor Atmosphere tool (inspector sun/moon/fog controls with cell scope indicator for fog, live sky tint and fog preview in software + GPU viewport paths), project persistence to `layers/atmosphere.kdl`, debounced per-cell dirty bake for fog edits and world-wide bake for sky tone, and runtime client **volumetric fog** from per-cell `atmosphere.settings` blobs keyed to the active camera cell (4-slice exponential integration along the view ray with height-based density falloff; shared math in [`fog_math.zig`](../src/modules/atmosphere/fog_math.zig), [`render_fog.zig`](../src/runtime/shared/render_fog.zig), and [`TexturedQuadLit.frag.wgsl`](../src/runtime/shared/shaders/source/TexturedQuadLit.frag.wgsl); software rasterizer + SDL3 GPU lit shader; fails fast when blob missing on world-streamed cells).
 
 **Compile outputs:** per-cell `atmosphere.settings` blob (cell-specific fog when authored), directional light-probe intensity metadata.
 
@@ -357,7 +357,7 @@ recompile dirty cells in background
 hot-swap compiled outputs at runtime
 ```
 
-Today's editor loads and saves the whole [`scenes/main.kdl`](../scenes/main.kdl) file. Future editor sessions will mark dirty cells and trigger partial recompile.
+Today's editor loads and saves whole project scene files such as `scenes/main.kdl`. Future editor sessions will mark dirty cells and trigger partial recompile.
 
 ## Baked Runtime Outputs
 
@@ -482,7 +482,7 @@ Example manifest:
 |---------|----------------|
 | Cell types and manifest | [`src/world/cell.zig`](../src/world/cell.zig), [`src/world/manifest.zig`](../src/world/manifest.zig) |
 | Compiler orchestration | [`src/world/compiler/`](../src/world/compiler/), [`src/tools/world_bake.zig`](../src/tools/world_bake.zig) |
-| Streaming manager | [`src/world/stream.zig`](../src/world/stream.zig) or [`src/framework/world_stream.zig`](../src/framework/world_stream.zig) |
+| Streaming manager | [`src/world/stream.zig`](../src/world/stream.zig) |
 | Authoring layer gems | [`src/modules/terrain/`](../src/modules/terrain/), `splines/`, `scatter/`, etc. per [docs/EXTENDING.md](EXTENDING.md) |
 | Runtime cell activation | [`src/game/cell_spawn.zig`](../src/game/cell_spawn.zig) evolving from [`scene_spawn.zig`](../src/game/scene_spawn.zig) |
 | Editor layer tools | [`src/runtime/editor/project_editor_<layer>.zig`](../src/runtime/editor/) per existing mode split |

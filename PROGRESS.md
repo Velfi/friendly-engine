@@ -1,6 +1,6 @@
 # Friendly Engine Progress
 
-Last updated: 2026-06-15 (roadmap batch B–G)
+Last updated: 2026-06-22 (documentation audit)
 
 This file tracks implementation status against `AGENTS.md` goals and `ARCHITECTURE.md` milestone items.
 
@@ -9,7 +9,7 @@ This file tracks implementation status against `AGENTS.md` goals and `ARCHITECTU
 - [x] Milestone 1 foundation is implemented (core/framework skeleton, module graph, runtime targets)
 - [x] Runtime loop + world tick path is implemented in both `client` and `server`
 - [x] Request bus API is implemented (`register`, `unregister`, `request`) with unit test coverage
-- [x] Tools pipeline CLI is implemented (`friendly_engine_tools import|bundle|bake-scene|world-bake|bake|describe|write-schemas`)
+- [x] Tools pipeline CLI is implemented (`friendly_engine_tools import|bundle|bake-scene|world-bake|terrain|bake|describe|assets.describe|write-schemas`)
 - [~] End-user 3D runtime: SDL3 client window with production GPU renderer (SDL3 GPU API -> Metal/Vulkan/D3D12), explicit software mode with diffuse lighting, volumetric distance fog (4-slice exponential integration with height falloff) from baked `atmosphere.settings` blobs on world-streamed cells, and project scene load; ECS scene spawn drives render commands via `draw_mesh`; directional shadow maps and scene light objects feed the lit shader; authored physics bodies sync incrementally with `gem.physics3d`
 - [x] Editor shell: SDL3 project manager + project editor with viewport, scene save/load, undo, snap grid, numeric property fields, transform gizmos
 - [~] Five-mode editor UI (World, Layout, Architecture, Prop, Life): mode tabs, tool bars, left/right inspectors, bottom strip, and Life timeline are wired; curves editor, full bone posing, and play-in-editor remain stubs
@@ -69,8 +69,8 @@ zig build run-tools -- help
 
 Expected today:
 
-- `zig build test` exits 0
-- `zig build check` prints `check ok: LLM-friendly surface passes size budget and schema files exist`
+- `zig build test` currently fails on scene KDL marker round trips and prop asset document/shape-intent round trips; it should return to 0 before the next green milestone is recorded
+- `zig build check` currently fails fast on the known source-size budget debt listed in `zig build modcheck`; it should return to printing `check ok: LLM-friendly surface passes size budget and schema files exist` after those modules are split
 - `zig build run-tools -- describe` prints JSON listing runtime targets, modules, components, and request commands
 - `zig build run-client -- --headless --frames 3` prints scene summary and `friendly-engine client runtime initialized`
 - Windowed client prints `friendly-engine client: Metal GPU renderer enabled (SDL3 GPU API)` or `Vulkan ...` / `D3D12 ...`; GPU init failure exits unless `--software` is passed
@@ -85,6 +85,17 @@ Use [docs/PLATFORM_VALIDATION.md](docs/PLATFORM_VALIDATION.md) for Stage 1
 macOS Metal, Linux Vulkan, and Windows D3D12 validation. Record dated platform
 results under `Latest review`; Linux and Windows are not verified until the
 checklist commands are run on those platforms.
+
+Latest review (2026-06-22 documentation audit):
+
+- Verified: `zig build`
+- Verified: `zig build run-tools -- help`
+- Verified: `zig build run-tools -- describe`
+- Verified: Markdown local links after this audit
+- Failed: `zig build test` completed 531/542 passing tests; failures are concentrated in `scene_kdl` marker round trips, `prop_asset_doc` empty tags/shape-intent parsing, and prop editor tests that reopen persisted shape intent
+- Failed as expected for current size-budget debt: `zig build check` reports 31 oversized source modules, led by `src/runtime/editor/editor_commands.zig`, `src/runtime/editor/project_editor_ui_world.zig`, `src/runtime/editor/project_editor_prop_asset.zig`, `src/runtime/editor/project_editor_blockout.zig`, and `src/runtime/editor/project_editor_ui_prop.zig`
+- Failed as expected for the same reason: `zig build modcheck`
+- Not rerun in this audit: windowed GPU client/editor commands, headless client, and server
 
 Latest review (2026-06-15 roadmap batch B–G):
 
@@ -131,7 +142,7 @@ ready lanes.
 - **Production path**: SDL3 GPU API (`runtime/shared/gpu_backend_sdl.zig` + `sdl_gpu.zig`) — Metal on macOS, Vulkan on Linux, D3D12 on Windows; precompiled shaders embedded per platform (`runtime/shared/shaders/`)
 - **Lighting**: `runtime/shared/render_lighting.zig` gathers sun + point lights; lit mesh pipeline uses vertex normals, ambient + Lambert diffuse, directional shadow maps (`cast_shadows` / `receive_shadows` honored), and volumetric distance fog from baked `atmosphere.settings` blobs (`fog_math.zig`, `render_fog.zig`, `TexturedQuadLit.frag.wgsl` — 4-slice exponential integration with height-based density falloff); scatter prototype meshes batch into per-mesh GPU instanced draws via `TexturedQuadInstanced.vert`, `gpu_instance_buffer.zig`, and `render_commands.appendInstancedMesh`
 - **Abstraction**: `runtime/shared/gpu_api.zig` — `GpuBackendKind` (`.sdl_gpu` only), unified `GpuRenderer` facade behind `framework/render.zig` command queue
-- **Software mode**: software rasterizer (`viewport3d.zig` / `SceneView`) applies the same diffuse lighting and volumetric fog model when `--software` is passed
+- **Software mode**: software rasterizer (`SceneView`) applies the same diffuse lighting and volumetric fog model when `--software` is passed
 - Client wiring: `desktop_backend.zig` requires SDL3 GPU unless `--software` is passed
 - Editor wiring: `editor_viewport_gpu.zig` uses SDL3 GPU offscreen (Metal/Vulkan/D3D12); readback pixels feed software overlays then SDL texture blit; `--software` selects the software viewport
 - CLI: `--gpu` (require SDL3 GPU, default), `--software`, `--headless` skips window/GPU entirely

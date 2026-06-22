@@ -19,9 +19,9 @@ This document defines a practical architecture for `friendly-engine`, inspired b
 2. **Framework layer**
    - ECS world, scene lifecycle, asset system, input abstraction, render abstraction, networking abstraction.
 3. **Feature modules ("Gems" model)**
-   - Optional packages for rendering backends, physics, AI, UI, audio, tooling.
+   - Optional packages for rendering backends, physics, AI, UI, audio, world layers, and tooling.
    - Modules declare dependencies and register services at startup.
-   - Current built-in gems in `src/modules/`: `physics3d`, `core_ui`.
+   - Current built-in gems in `src/modules/` include runtime gems (`ecs`, input/controller, `physics3d`, `core_ui`, `luajit`, `audio`, `persistence`, terrain/splines/scatter/grass, atmosphere/water/ocean, buildings/sectors/local CSG, FPS controller) plus editor-facing gems (`editor_world`, `editor_architecture`, `editor_prop`, `editor_life`, `concept_paint`).
 4. **Project/game layer**
    - Game rules, content config, startup profile, and entry points for runtimes.
 
@@ -30,8 +30,8 @@ This document defines a practical architecture for `friendly-engine`, inspired b
 ```text
 friendly-engine/
   build.zig
-  engine.kdl               # project config (enabled modules, startup scene/world/bundle)
-  scenes/                  # editor/runtime scene JSON
+  engine.kdl               # project config in friendly-engine projects
+  scenes/                  # project-owned editor/runtime scene KDL
   src/
     root.zig                 # engine library entry (friendly_engine module)
     core/                    # math, ids, buses, time, serialization
@@ -39,6 +39,8 @@ friendly-engine/
     modules/
       physics3d/             # built-in gem: rigid-body physics
       core_ui/               # built-in gem: immediate-mode UI context
+      terrain/ splines/      # world-layer gems
+      editor_world/          # editor-facing authoring gems
     runtime/
       bootstrap.zig          # shared runtime boot (config + module graph)
       client/                # game client executable
@@ -46,7 +48,7 @@ friendly-engine/
       server/                # headless server executable
       shared/                # geometry, scene I/O, GPU/software viewport
     game/                    # default gameplay hooks and scene spawn
-    tools/                   # asset pipeline + describe + modcheck CLIs
+    tools/                   # asset pipeline, bake, describe, schemas, doctor, modcheck CLIs
   assets/
     source/
     cache/

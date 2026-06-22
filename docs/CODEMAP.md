@@ -9,7 +9,7 @@ One-line map of every module. Read this before editing source.
 - IDs and buses live in `src/core/`; gameplay uses `framework.World`.
 - Runtime boot goes through `src/runtime/bootstrap.zig` (do not duplicate in `main.zig`).
 - Introspection: `zig build run-tools -- describe` emits engine JSON; request bus serves `world.*` commands at runtime.
-- File size budget: `zig build check` and `zig build modcheck` fail when any `.zig` file under `src/` exceeds 700 lines.
+- File size budget: `zig build check` and `zig build modcheck` fail when any `.zig` file under `src/` exceeds 700 lines. As of the 2026-06-22 docs audit this budget is currently failing and needs module splits before `check` can pass again.
 - Project repair diagnostics: `zig build doctor -- --project path` checks project KDL files and references in one LLM-friendly report.
 
 ## Entry Points
@@ -20,7 +20,7 @@ One-line map of every module. Read this before editing source.
 | [src/runtime/client/main.zig](../src/runtime/client/main.zig) | Client executable |
 | [src/runtime/editor/main.zig](../src/runtime/editor/main.zig) | Editor executable |
 | [src/runtime/server/main.zig](../src/runtime/server/main.zig) | Headless server executable |
-| [src/tools/main.zig](../src/tools/main.zig) | Tools CLI (`import`, `bundle`, `describe`) |
+| [src/tools/main.zig](../src/tools/main.zig) | Tools CLI (`import`, `bundle`, `bake-scene`, `world-bake`, `terrain`, `bake`, `describe`, `assets.describe`, `write-schemas`) |
 | [src/tools/doctor_main.zig](../src/tools/doctor_main.zig) | `doctor` project diagnostics CLI behind `zig build doctor` |
 
 ## Core (`src/core/`)
@@ -65,12 +65,20 @@ One-line map of every module. Read this before editing source.
 | terrain/mesh_builder.zig | Shared heightfield mesh LOD build + normals |
 | terrain/splat_texture.zig | Splat-driven 128² material blend textures |
 | terrain/lod_pick.zig | Distance-based LOD tier selection |
-| project_editor_terrain_preview.zig | Editor live terrain preview, clipmap radius, auto-bake |
 | splines/mod.zig | Spline layer compile: road meshes, terrain deformation/mask blobs |
 | sectors/mod.zig | Sector interior compile: room meshes, occlusion/navmesh blobs |
 | buildings/mod.zig | Parametric building compile: shell/interior meshes, portal + LOD blobs |
 | scatter/mod.zig | Scatter compile: rule-driven clusters + density-mask overrides |
+| grass/mod.zig | Grass runtime/cluster layer |
+| atmosphere/mod.zig | Sky/fog authoring and runtime atmosphere blobs |
+| water/mod.zig | Local water volume layer |
+| ocean/mod.zig | Far-ocean layer |
 | local_csg/mod.zig | Local CSG semantic cuts: doorway wall splits and trim generation |
+| editor_world/mod.zig | Editor-facing world authoring gem |
+| editor_architecture/mod.zig | Editor-facing architecture gem |
+| editor_prop/mod.zig | Editor-facing prop workshop gem |
+| editor_life/mod.zig | Editor-facing life/animation gem |
+| concept_paint/mod.zig | Concept paint capture/import/apply gem |
 
 ## Game (`src/game/`)
 
@@ -78,6 +86,10 @@ One-line map of every module. Read this before editing source.
 |------|------|
 | mod.zig | `tickClient`, `tickServer`, `registerDefaults`, scene state pointer |
 | scene_spawn.zig | ECS spawn from scene objects; `SceneTransform`, `SceneDrawable` |
+| cell_spawn.zig | ECS activation from streamed `.fcell` cells |
+| cell_collision.zig | Runtime collision data from streamed cells |
+| scatter_instancing.zig | GPU instanced scatter draw batching |
+| terrain_heightfield.zig | Runtime Jolt heightfield collision loading |
 | physics_types.zig | Authored physics body metadata shared by scene spawn and simulation |
 | physics.zig | Scene physics sync, body bindings, and transform authority rules |
 | level_scene.zig | Level scene helpers |
@@ -88,13 +100,17 @@ One-line map of every module. Read this before editing source.
 |------|------|
 | mod.zig | Re-exports shared runtime utilities |
 | geometry.zig | Primitives, mesh build |
-| scene_io.zig | Scene JSON load/save |
+| scene_io.zig | Scene document load/save |
 | scene_physics.zig | Authored scene physics metadata shared by scene I/O and editor |
-| viewport3d.zig | Software 3D rasterizer |
+| scene_texture.zig | Scene texture references and transforms |
+| scene_surface.zig | Editable surface and face material data |
 | gpu_api.zig | GPU backend facade |
 | gpu_backend_sdl.zig | SDL3 GPU implementation |
+| render_fog.zig | Shared volumetric fog math for software/GPU paths |
+| render_sky.zig | Shared sky rendering inputs |
 | render_commands.zig | Stateless render command buffer, sort keys, and command stats |
 | render_visibility.zig | CPU-side scene/cell visibility preparation |
+| editor_control_commands.zig | Source of truth for MCP/editor-control command metadata and schemas |
 | editor_command_ids.zig | Shared editor command ID constants and generators for UI/describe |
 | sdl.zig | SDL3 bindings subset |
 | editor_math.zig | Editor vector math |
@@ -115,7 +131,14 @@ One-line map of every module. Read this before editing source.
 | project_editor_state.zig | Project editor state, scene load/save, render/input delegation |
 | project_editor_dirty_cells.zig | Project editor dirty world-cell diagnostics |
 | project_editor_ui_build.zig | Project editor chrome tree declared as `core_ui` commands |
+| project_editor_ui_world.zig | World mode UI surface |
+| project_editor_ui_architecture.zig | Architecture mode UI surface |
+| project_editor_ui_prop.zig | Prop mode UI surface |
+| project_editor_ui_life.zig | Life mode UI surface |
 | project_editor_blockout.zig | Blockout brush and semantic ramp authoring helpers |
+| project_editor_world_authoring.zig | Shared world layer authoring helpers |
+| project_editor_terrain_preview.zig | Editor live terrain preview, clipmap radius, auto-bake |
+| project_editor_prop_asset.zig | Prop asset document editing and persistence |
 | project_editor_materials.zig | Editor material catalog and stable material command IDs |
 | project_editor_material_apply.zig | Apply/select editor material catalog entries |
 | project_editor_physics.zig | Inspector actions for authored physics body metadata |
@@ -136,6 +159,10 @@ One-line map of every module. Read this before editing source.
 | mod.zig | Re-exports tools API |
 | assets.zig | `import`, `bundle` CLI |
 | describe.zig | `describe` CLI — machine-readable engine catalog |
+| world_bake.zig | `world-bake` CLI for per-cell `.fcell` output |
+| scene_bake.zig | `bake-scene` CLI for monolithic `.fscene` output |
+| terrain.zig | `terrain validate` CLI |
+| assets_query.zig | `assets.describe` CLI |
 | module_size.zig | Oversized file scanner enforcing the 700-line source budget |
 | modcheck_main.zig | modcheck executable entry |
 | doctor_main.zig | Doctor executable: parses project config/world/scene KDL and validates referenced assets |
@@ -155,7 +182,7 @@ One-line map of every module. Read this before editing source.
 | [docs/UI_COPY.md](UI_COPY.md) | Editor and tool UI string guidelines |
 | [docs/EXTENDING.md](EXTENDING.md) | Add modules, components, requests, and runtime targets |
 | docs/schema/scene.schema.json | JSON Schema for scene files |
-| docs/schema/world.schema.json | Legacy JSON Schema for old world manifest |
+| docs/schema/world.schema.json | JSON Schema for generated world manifest data |
 
 ## World (`src/world/`)
 
@@ -172,4 +199,3 @@ Runtime chunk system and layered world compiler are implemented for Phases 1-6 M
 | src/world/compiler/layer.zig | `WorldCompilerLayer` hooks + compile context + blob helpers |
 | src/tools/world_bake.zig | CLI: authoring → per-cell `.fcell` |
 | src/game/cell_spawn.zig | ECS activation from loaded cells |
-| src/framework/world_stream.zig | Optional framework hook for streaming manager |
